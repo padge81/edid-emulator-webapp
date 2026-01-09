@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EDID Emulator Web App</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { margin: 5px; }
+        pre { background: #f0f0f0; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>EDID Emulator Control Panel</h1>
+    <button onclick="detectHDMI()">Detect HDMI Port</button>
+    <p>Using port: <span id="port">2</span></p>
+
+    <h2>Read EDID</h2>
+    <button onclick="readEDID()">Read EDID</button>
+    <pre id="edidOutput"></pre>
+
+    <h2>Save EDID</h2>
+    <button onclick="saveEDID()">Save EDID to File</button>
+
+    <h2>Write EDID</h2>
+    <button onclick="writeEDID()">Write EDID from File</button>
+
+    <h2>Verify EDID</h2>
+    <button onclick="verifyEDID()">Verify EDID</button>
+    <p id="verifyResult"></p>
+
+    <script>
+        const portSpan = document.getElementById('port');
+        const edidOutput = document.getElementById('edidOutput');
+        const verifyResult = document.getElementById('verifyResult');
+
+        async function detectHDMI() {
+            const response = await fetch('/detect_hdmi');
+            const data = await response.json();
+            portSpan.textContent = data.port;
+        }
+
+        async function readEDID() {
+            const port = portSpan.textContent;
+            const response = await fetch(`/read_edid?port=${port}`);
+            const data = await response.json();
+            if (data.error) {
+                alert('Error: ' + data.error);
+            } else {
+                edidOutput.textContent = data.decoded_edid;
+            }
+        }
+
+        async function saveEDID() {
+            const port = portSpan.textContent;
+            const filename = 'EDID.bin'; // you can extend to allow user input
+            const response = await fetch('/save_edid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ port, filename })
+            });
+            const data = await response.json();
+            alert(data.message);
+        }
+
+        async function writeEDID() {
+            const port = portSpan.textContent;
+            const filename = 'EDID.bin'; // extend to file upload if needed
+            const response = await fetch('/write_edid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ port, filename })
+            });
+            const data = await response.json();
+            alert(data.message);
+        }
+
+        async function verifyEDID() {
+            const port = portSpan.textContent;
+            const filename = 'EDID.bin'; // extend to file upload if needed
+            const response = await fetch('/verify_edid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ port, filename })
+            });
+            const data = await response.json();
+            document.getElementById('verifyResult').textContent = data.match ? 'Match!' : 'Does not match!';
+        }
+    </script>
+</body>
+</html>
