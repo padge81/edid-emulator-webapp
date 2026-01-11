@@ -105,7 +105,7 @@ def verify_edid():
 def update_repo():
     passcode = request.get_json().get('passcode', '')
     # Optional: add passcode check for security
-    # if passcode != 'your_secure_passcode':
+    # if passcode!= 'your_secure_passcode':
     #     return jsonify({'error': 'Invalid passcode'}), 403
 
     if not GITHUB_PAT:
@@ -118,44 +118,15 @@ def update_repo():
     auth_repo_url = repo_url.replace('https://', f'https://{GITHUB_PAT}@')
 
     # Run git pull
-    cmd = f'git -C "{repo_dir}" pull {auth_repo_url}'
-    stdout, stderr = run_command(cmd)
-    
-    # Log output for debugging
-    print('Git pull stdout:', stdout)
-    print('Git pull stderr:', stderr)
-    
-        # Detect if updates occurred
-    if "Already up-to-date" in stdout:
-        message = "Repository is already up-to-date. No changes pulled."
-        return jsonify({'message': message})
-    elif "Updating" in stdout:
-        message = "Repository updated successfully."
-        # Optional: trigger restart here
-        return jsonify({'message': message})
-    else:
-        # Handle case where output is different or unexpected
-        return jsonify({'message': 'Pull executed.', 'output': stdout})
-    
-    if stderr:
-        return jsonify({'error': stderr, 'output': stdout}), 500
-    return jsonify({'message': 'Repository updated successfully.', 'output': stdout})
-    
-    # After successful update, restart the app
-    # This will exit the process; if managed by systemd or supervisor, it will restart
-    def restart():
-        os.kill(os.getpid(), signal.SIGINT)
-
-    # Call the restart function after update
-    response = jsonify({'message': 'Repository updated successfully. Restarting...'})
-    response.status_code = 200
-
-    # Schedule restart after response sent
-    # Using threading to delay restart slightly
-    import threading
-    threading.Timer(1.0, restart).start()
-
-    return response
+    cmd = ['git', '-C', repo_dir, 'pull', auth_repo_url]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return jsonify({'result': 'Repository updated successfully'})
+        else:
+            return jsonify({'error': f'Failed to update repository: {result.stderr}'}), 500
+    except FileNotFoundError:
+        return jsonify({'error': 'Git executable not found'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
