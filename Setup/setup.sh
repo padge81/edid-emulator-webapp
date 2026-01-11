@@ -1,28 +1,19 @@
 #!/bin/bash
 
-echo "Starting setup..."
+# Create edid-rw directory in edid-emulator-webapp
+mkdir -p /edid-emulator-webapp/edid-rw
 
-# Check for required commands
-command -v python3 >/dev/null 2>&1 || { echo >&2 "Python3 is not installed. Aborting."; exit 1; }
-command -v pip3 >/dev/null 2>&1 || { echo >&2 "pip3 is not installed. Aborting."; exit 1; }
-command -v git >/dev/null 2>&1 || { echo >&2 "git is not installed. Aborting."; exit 1; }
+# Change into the edid-rw directory
+cd /edid-emulator-webapp/edid-rw
 
-# Change to the edid-emulator-webapp directory
-cd./edid-emulator-webapp/
+# Install prerequisites
+sudo apt-get install python3-smbus edid-decode
 
-# Check if edid-rw repository is already cloned
-if [! -d "edid-rw" ]; then
-    echo "Cloning edid-rw repository..."
-    git clone https://github.com/bulletmark/edid-rw
-fi
+# Clone the edid-rw repository
+sudo git clone https://github.com/bulletmark/edid-rw
 
-# Change to the edid-rw directory
-cd./edid-rw/
+# Change into the edid-rw directory
+cd edid-rw
 
-# Check if edid-rw can be run successfully
-./edid-rw 2 | edid-decode >/dev/null 2>&1
-if [ $? -eq 0 ]; then
-    echo "edid-rw successfully cloned and installed."
-else
-    echo "Error: edid-rw failed to install. Check the output above for more information."
-fi
+# Read and display EDID information
+sudo./edid-rw 2 | edid-decode
