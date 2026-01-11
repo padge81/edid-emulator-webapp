@@ -19,7 +19,7 @@ edid_rw_path = os.path.join(script_dir, 'edid-rw', 'edid-rw')
 GITHUB_PAT = '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'
 
 # Hardcoded version
-VERSION = "1.0.06"
+VERSION = "1.0.07"
 
 def run_command(command, cwd=None):
     try:
