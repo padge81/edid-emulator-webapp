@@ -84,6 +84,31 @@
             const data = await response.json();
             document.getElementById('verifyResult').textContent = data.match ? 'Match!' : 'Does not match!';
         }
+		
     </script>
+	<h3>Save EDID to File</h3>
+<input type="text" id="customFilename" placeholder="Enter filename" />
+<button onclick="saveCustomEdid()">Save EDID with Name</button>
+
+<script>
+function saveCustomEdid() {
+    const filename = document.getElementById('customFilename').value.trim();
+
+    if (!filename) {
+        alert("Please enter a filename");
+        return;
+    }
+
+    fetch('/save_edid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: filename, port: '2' }) // Adjust port if needed
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message || data.error);
+    });
+}
+</script>
 </body>
 </html>
