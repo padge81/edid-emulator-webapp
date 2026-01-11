@@ -14,7 +14,7 @@ if not os.path.exists(save_dir):
 edid_rw_path = os.path.join(script_dir, 'edid-rw', 'edid-rw')
 
 # Your GitHub PAT
-GITHUB_PAT = 'token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'
+GITHUB_PAT = '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'
 
 # Hardcoded version
 VERSION = "1.0.0"
