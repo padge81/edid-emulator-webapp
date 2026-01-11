@@ -19,7 +19,7 @@ edid_rw_path = os.path.join(script_dir, 'edid-rw', 'edid-rw')
 GITHUB_PAT = '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'
 
 # Hardcoded version
-VERSION = "1.0.07"
+VERSION = "1.0.08"
 
 def run_command(command, cwd=None):
     try:
@@ -127,6 +127,10 @@ def update_repo():
             return jsonify({'error': f'Failed to update repository: {result.stderr}'}), 500
     except FileNotFoundError:
         return jsonify({'error': 'Git executable not found'}), 500
+        
+     # Restart the app
+    restart_cmd = f'python3 {os.path.join(script_dir, "app.py")}'
+    subprocess.run(restart_cmd, shell=True, check=True)  # Run the restart command
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
