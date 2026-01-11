@@ -17,7 +17,7 @@ edid_rw_path = os.path.join(script_dir, 'edid-rw', 'edid-rw')
 GITHUB_PAT = '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'
 
 # Hardcoded version
-VERSION = "1.0.0"
+VERSION = "1.0.02"
 
 def run_command(command, cwd=None):
     try:
@@ -119,7 +119,7 @@ def update_repo():
     cmd = f'git -C "{repo_dir}" pull {auth_repo_url}'
     stdout, stderr = run_command(cmd)
     if stderr:
-        return jsonify({'error': stderr}), 500
+        return jsonify({'error': stderr, 'output': stdout}), 500
     return jsonify({'message': 'Repository updated successfully.', 'output': stdout})
 
 if __name__ == '__main__':
