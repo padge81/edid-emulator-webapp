@@ -65,7 +65,121 @@ function loadAndPreview() {
 
 // Write from selected file
 function writeFromPreview() {
+    const filename = document.getElementById('savedFilesDropdo<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>EDID Management</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  #edidPreview { width: 100%; height: 200px; overflow: auto; border: 1px solid #ccc; padding: 10px; white-space: pre; font-family: monospace; }
+  select, input, button { margin: 10px 0; display: block; width: 300px; }
+</style>
+</head>
+<body>
+
+<h2>EDID Files Management</h2>
+
+<h3>Select Saved EDID File</h3>
+<select id="savedFilesDropdown"></select>
+<button onclick="loadAndPreview()">Load & Preview</button>
+
+<h4>EDID Preview (Hex)</h4>
+<textarea id="edidPreview" readonly></textarea>
+
+<h3>Enter Passcode for Update</h3>
+<input type="password" id="passcodeInput" placeholder="Enter passcode" />
+
+<!-- Buttons -->
+<button onclick="loadSavedFiles()">Refresh File List</button>
+<button onclick="writeFromPreview()">Write EDID</button>
+<button onclick="verifyEDID()">Verify EDID</button>
+<button onclick="updateRepository()">Update Repository</button>
+
+<script>
+// Load file list
+window.onload = loadSavedFiles;
+
+function loadSavedFiles() {
+    fetch('/list_files')
+        .then(res => res.json())
+        .then(data => {
+            const dropdown = document.getElementById('savedFilesDropdown');
+            dropdown.innerHTML = '';
+            data.files.forEach(f => {
+                const option = document.createElement('option');
+                option.value = f;
+                option.text = f;
+                dropdown.appendChild(option);
+            });
+        });
+}
+
+// Load and preview selected file as hex
+function loadAndPreview() {
     const filename = document.getElementById('savedFilesDropdown').value;
+    fetch('/read_edid_file?filename=' + encodeURIComponent(filename))
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert('Error: ' + data.error);
+                document.getElementById('edidPreview').value = '';
+            } else {
+                const binStr = atob(data.edid_content);
+                let hexStr = '';
+                for (let i = 0; i < binStr.length; i++) {
+                    hexStr += ('0' + binStr.charCodeAt(i).toString(16)).slice(-2) + ' ';
+                    if ((i + 1) % 16 === 0) hexStr += '\n';
+                }
+                document.getElementById('edidPreview').value = hexStr;
+            }
+        });
+}
+
+// Write EDID from selected file
+function writeFromPreview() {
+    const filename = document.getElementById('savedFilesDropdown').value;
+    fetch('/write_edid_from_file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: filename, port: '2' })
+    }).then(res => res.json())
+      .then(data => alert(data.message || data.error));
+}
+
+// Verify current EDID matches file
+function verifyEDID() {
+    const filename = document.getElementById('savedFilesDropdown').value;
+    fetch('/verify_edid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: filename, port: '2' })
+    }).then(res => res.json())
+      .then(data => {
+        if (data.match) alert('Verification successful: EDID matches.');
+        else alert('Verification failed: EDID does not match.');
+      });
+}
+
+// Update repository
+function updateRepository() {
+    const passcode = document.getElementById('passcodeInput').value;
+    fetch('/update_repo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode: passcode })
+    }).then(res => res.json())
+      .then(data => {
+        if (data.error) alert('Error: ' + data.error);
+        else alert('Success: ' + data.message);
+        // Optionally, refresh file list if repo changes
+        loadSavedFiles();
+      });
+}
+</script>
+
+</body>
+</html>wn').value;
     fetch('/write_edid_from_file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

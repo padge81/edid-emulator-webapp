@@ -14,9 +14,12 @@ if not os.path.exists(save_dir):
 # Path to edid-rw
 edid_rw_path = os.path.join(script_dir, 'edid-rw', 'edid-rw')
 
-def run_command(command):
+# Your GitHub PAT
+GITHUB_PAT = 'token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'
+
+def run_command(command, cwd=None):
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=cwd)
         return result.stdout, result.stderr
     except Exception as e:
         return "", str(e)
@@ -38,7 +41,7 @@ def read_edid():
         return jsonify({'error': stderr}), 500
     return jsonify({'decoded_edid': stdout})
 
-# --- New routes ---
+# --- EDID Files Management ---
 
 @app.route('/list_files', methods=['GET'])
 def list_files():
@@ -91,6 +94,28 @@ def verify_edid():
 
     match = (stdout.strip() == '')
     return jsonify({'match': match})
+
+# --- Repository update with PAT ---
+
+@app.route('/update_repo', methods=['POST'])
+def update_repo():
+    passcode = request.get_json().get('passcode', '')
+    # Optional: add passcode check if needed
+    # if passcode != 'your_secure_passcode':
+    #     return jsonify({'error': 'Invalid passcode'}), 403
+
+    if not GITHUB_PAT:
+        return jsonify({'error': 'GitHub PAT not configured'}), 500
+
+    repo_dir = os.path.join(script_dir, 'your_repo_directory')  # replace with your repo folder
+    repo_url = 'https://github.com/padge81/edid-emulator-webapp.git'
+    auth_repo_url = repo_url.replace('https://', f'https://{GITHUB_PAT}@')
+
+    cmd = f'git -C "{repo_dir}" pull {auth_repo_url}'
+    stdout, stderr = run_command(cmd)
+    if stderr:
+        return jsonify({'error': stderr}), 500
+    return jsonify({'message': 'Repository updated successfully.', 'output': stdout})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
