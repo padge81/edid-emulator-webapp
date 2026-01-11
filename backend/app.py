@@ -4,13 +4,13 @@ import os
 
 app = Flask(__name__)
 
-# Determine the directory of this script
+# Directory of this script
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Directory to save EDID files
 save_dir = os.path.join(script_dir, 'edid_Files')
 
-# Ensure the save directory exists
+# Ensure save directory exists
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
@@ -43,39 +43,38 @@ def read_edid():
         return jsonify({'error': stderr}), 500
     return jsonify({'decoded_edid': stdout})
 
-@app.route('/save_edid', methods=['POST'])
-def save_edid():
-    data = request.get_json()
-    port = data.get('port', '2')
-    filename = data.get('filename', 'EDID.bin').strip()
+# --- New routes for file listing, preview, write, and verification ---
 
-    # Save directory and filename handling
-    save_path = os.path.join(save_dir, filename)
+@app.route('/list_files', methods=['GET'])
+def list_files():
+    """Return list of saved EDID files."""
+    files = []
+    for f in os.listdir(save_dir):
+        if os.path.isfile(os.path.join(save_dir, f)):
+            files.append(f)
+    return jsonify({'files': files})
 
-    # Avoid overwriting files
-    base, ext = os.path.splitext(save_path)
-    count = 1
-    while os.path.exists(save_path):
-        save_path = f"{base}_{count}{ext}"
-        count += 1
-
-    # Save command
-    cmd = f"sudo \"{edid_rw_path}\" {port} > \"{save_path}\""
-    stdout, stderr = run_command(cmd)
-    if stderr:
-        return jsonify({'error': stderr}), 500
-
-    relative_path = os.path.relpath(save_path, script_dir)
-    return jsonify({'message': f'EDID saved to {relative_path}.'})
-
-@app.route('/write_edid', methods=['POST'])
-def write_edid():
-    data = request.get_json()
-    port = data.get('port', '2')
-    filename = data.get('filename', 'EDID.bin')
+@app.route('/read_edid_file', methods=['GET'])
+def read_edid_file():
+    filename = request.args.get('filename')
     filepath = os.path.join(save_dir, filename)
     if not os.path.exists(filepath):
-        return jsonify({'error': 'File not found.'}), 400
+        return jsonify({'error': 'File not found'}), 404
+    try:
+        with open(filepath, 'r') as f:
+            content = f.read()
+        return jsonify({'edid_content': content})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/write_edid_from_file', methods=['POST'])
+def write_edid_from_file():
+    data = request.get_json()
+    filename = data.get('filename')
+    port = data.get('port', '2')
+    filepath = os.path.join(save_dir, filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
     cmd = f"sudo \"{edid_rw_path}\" -w {port} < \"{filepath}\""
     stdout, stderr = run_command(cmd)
     if stderr:
@@ -85,8 +84,8 @@ def write_edid():
 @app.route('/verify_edid', methods=['POST'])
 def verify_edid():
     data = request.get_json()
+    filename = data.get('filename')
     port = data.get('port', '2')
-    filename = data.get('filename', 'EDID.bin')
     filepath = os.path.join(save_dir, filename)
     temp_file = os.path.join(save_dir, 'current_EDID.bin')
 
@@ -94,7 +93,7 @@ def verify_edid():
     cmd_read = f"sudo \"{edid_rw_path}\" {port} > \"{temp_file}\""
     run_command(cmd_read)
 
-    # Compare with saved file
+    # Compare with the saved file
     cmd_diff = f"diff \"{filepath}\" \"{temp_file}\""
     stdout, _ = run_command(cmd_diff)
 
@@ -104,4 +103,3 @@ def verify_edid():
 if __name__ == '__main__':
     # Run Flask app
     app.run(host='0.0.0.0', port=5000)
-    

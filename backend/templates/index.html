@@ -1,114 +1,97 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>EDID Emulator Web App</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        button { margin: 5px; }
-        pre { background: #f0f0f0; padding: 10px; }
-    </style>
+<meta charset="UTF-8" />
+<title>EDID Management</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  #edidPreview { width: 100%; height: 200px; overflow: auto; border: 1px solid #ccc; padding: 10px; white-space: pre; }
+  select, input, button { margin: 10px 0; display: block; width: 300px; }
+</style>
 </head>
 <body>
-    <h1>EDID Emulator Control Panel</h1>
-    <button onclick="detectHDMI()">Detect HDMI Port</button>
-    <p>Using port: <span id="port">2</span></p>
 
-    <h2>Read EDID</h2>
-    <button onclick="readEDID()">Read EDID</button>
-    <pre id="edidOutput"></pre>
+<h2>EDID Files Management</h2>
 
-    <h2>Save EDID</h2>
-    <button onclick="saveEDID()">Save EDID to File</button>
+<!-- Load and preview -->
+<h3>Select Saved EDID File</h3>
+<select id="savedFilesDropdown"></select>
+<button onclick="loadAndPreview()">Load & Preview</button>
 
-    <h2>Write EDID</h2>
-    <button onclick="writeEDID()">Write EDID from File</button>
+<h4>EDID Preview</h4>
+<textarea id="edidPreview" readonly></textarea>
 
-    <h2>Verify EDID</h2>
-    <button onclick="verifyEDID()">Verify EDID</button>
-    <p id="verifyResult"></p>
-
-    <script>
-        const portSpan = document.getElementById('port');
-        const edidOutput = document.getElementById('edidOutput');
-        const verifyResult = document.getElementById('verifyResult');
-
-        async function detectHDMI() {
-            const response = await fetch('/detect_hdmi');
-            const data = await response.json();
-            portSpan.textContent = data.port;
-        }
-
-        async function readEDID() {
-            const port = portSpan.textContent;
-            const response = await fetch(`/read_edid?port=${port}`);
-            const data = await response.json();
-            if (data.error) {
-                alert('Error: ' + data.error);
-            } else {
-                edidOutput.textContent = data.decoded_edid;
-            }
-        }
-
-        async function saveEDID() {
-            const port = portSpan.textContent;
-            const filename = 'EDID.bin'; // you can extend to allow user input
-            const response = await fetch('/save_edid', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ port, filename })
-            });
-            const data = await response.json();
-            alert(data.message);
-        }
-
-        async function writeEDID() {
-            const port = portSpan.textContent;
-            const filename = 'EDID.bin'; // extend to file upload if needed
-            const response = await fetch('/write_edid', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ port, filename })
-            });
-            const data = await response.json();
-            alert(data.message);
-        }
-
-        async function verifyEDID() {
-            const port = portSpan.textContent;
-            const filename = 'EDID.bin'; // extend to file upload if needed
-            const response = await fetch('/verify_edid', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ port, filename })
-            });
-            const data = await response.json();
-            document.getElementById('verifyResult').textContent = data.match ? 'Match!' : 'Does not match!';
-        }
-		
-    </script>
-	<h3>Save EDID to File</h3>
-<input type="text" id="customFilename" placeholder="Enter filename" />
-<button onclick="saveCustomEdid()">Save EDID with Name</button>
+<!-- Buttons for actions -->
+<button onclick="writeFromPreview()">Write EDID to Device</button>
+<button onclick="verifyEDID()">Verify EDID</button>
 
 <script>
-function saveCustomEdid() {
-    const filename = document.getElementById('customFilename').value.trim();
+// Load list of saved files on page load
+window.onload = loadSavedFiles;
 
-    if (!filename) {
-        alert("Please enter a filename");
-        return;
-    }
+// Fetch list of saved files
+function loadSavedFiles() {
+    fetch('/list_files')
+        .then(res => res.json())
+        .then(data => {
+            const dropdown = document.getElementById('savedFilesDropdown');
+            dropdown.innerHTML = '';
+            data.files.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file;
+                option.text = file;
+                dropdown.appendChild(option);
+            });
+        });
+}
 
-    fetch('/save_edid', {
+// Load and preview selected EDID file
+function loadAndPreview() {
+    const filename = document.getElementById('savedFilesDropdown').value;
+    fetch('/read_edid_file?filename=' + encodeURIComponent(filename))
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert('Error: ' + data.error);
+                document.getElementById('edidPreview').value = '';
+            } else {
+                document.getElementById('edidPreview').value = data.edid_content;
+            }
+        });
+}
+
+// Write the EDID from the selected file to the device
+function writeFromPreview() {
+    const filename = document.getElementById('savedFilesDropdown').value;
+    fetch('/write_edid_from_file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: filename, port: '2' }) // Adjust port if needed
+        body: JSON.stringify({ filename: filename, port: '2' }) // adjust port if needed
     })
-    .then(response => response.json())
+    .then(res => res.json())
     .then(data => {
         alert(data.message || data.error);
     });
 }
+
+// Verify if current EDID matches the selected file
+function verifyEDID() {
+    const filename = document.getElementById('savedFilesDropdown').value;
+    fetch('/verify_edid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: filename, port: '2' }) // adjust port if needed
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.match) {
+            alert('Verification successful: EDID matches.');
+        } else {
+            alert('Verification failed: EDID does not match.');
+        }
+    });
+}
 </script>
+
 </body>
 </html>
