@@ -1,9 +1,16 @@
 from flask import Flask, request, jsonify
 import subprocess
+import os
 
 app = Flask(__name__)
 
-# Helper function to run shell commands
+# Determine the directory of this script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Full path to the edid-rw executable
+edid_rw_path = os.path.join(script_dir, 'edid-rw', 'edid-rw')
+
+# Helper function to run shell commands with the correct path
 def run_command(command):
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
@@ -19,7 +26,6 @@ def index():
 # Detect HDMI port (stub implementation)
 @app.route('/detect_hdmi', methods=['GET'])
 def detect_hdmi():
-    # Implement actual detection logic if needed
     port = 2
     return jsonify({'port': port})
 
@@ -28,7 +34,7 @@ def detect_hdmi():
 def read_edid():
     port = request.args.get('port', default='2')
     # Run edid-rw to read EDID and decode
-    cmd = f"sudo ./edid-rw {port} | edid-decode"
+    cmd = f"sudo \"{edid_rw_path}\" {port} | edid-decode"
     stdout, stderr = run_command(cmd)
     if stderr:
         return jsonify({'error': stderr}), 500
@@ -41,7 +47,7 @@ def save_edid():
     port = data.get('port', '2')
     filename = data.get('filename', 'EDID.bin')
     # Save EDID to file
-    cmd = f"sudo ./edid-rw {port} > {filename}"
+    cmd = f"sudo \"{edid_rw_path}\" {port} > {filename}"
     stdout, stderr = run_command(cmd)
     if stderr:
         return jsonify({'error': stderr}), 500
@@ -54,7 +60,7 @@ def write_edid():
     port = data.get('port', '2')
     filename = data.get('filename', 'EDID.bin')
     # Write EDID from file
-    cmd = f"sudo ./edid-rw -w {port} < {filename}"
+    cmd = f"sudo \"{edid_rw_path}\" -w {port} < {filename}"
     stdout, stderr = run_command(cmd)
     if stderr:
         return jsonify({'error': stderr}), 500
@@ -69,7 +75,7 @@ def verify_edid():
 
     # Save current EDID to a temp file
     temp_file = 'current_EDID.bin'
-    cmd_read = f"sudo ./edid-rw {port} > {temp_file}"
+    cmd_read = f"sudo \"{edid_rw_path}\" {port} > {temp_file}"
     run_command(cmd_read)
 
     # Compare the saved EDID file with the provided one
