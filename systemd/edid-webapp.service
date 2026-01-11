@@ -1,0 +1,14 @@
+[Unit]
+Description=EDID Emulator Web App
+After=network.target
+
+[Service]
+WorkingDirectory=/home/mint/edid-emulator-webapp/backend
+ExecStart=/usr/bin/python3 app.py
+EnvironmentFile=/home/mint/edid-emulator-webapp/backend/.env
+Restart=always
+RestartSec=2
+User=root
+
+[Install]
+WantedBy=multi-user.target
