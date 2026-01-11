@@ -120,6 +120,11 @@ def update_repo():
     # Run git pull
     cmd = f'git -C "{repo_dir}" pull {auth_repo_url}'
     stdout, stderr = run_command(cmd)
+    
+    # Log output for debugging
+    print('Git pull stdout:', stdout)
+    print('Git pull stderr:', stderr)
+    
     if stderr:
         return jsonify({'error': stderr, 'output': stdout}), 500
     return jsonify({'message': 'Repository updated successfully.', 'output': stdout})
