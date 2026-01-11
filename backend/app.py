@@ -1,136 +1,173 @@
 from flask import Flask, request, jsonify, render_template
 import subprocess
 import os
-import sys
 import signal
+import base64
 
 app = Flask(__name__)
 
-# Directory setup
-script_dir = os.path.dirname(os.path.abspath(__file__))
-save_dir = os.path.join(script_dir, 'edid_Files')
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
+# ----------------------------
+# Configuration
+# ----------------------------
 
-# Path to edid-rw
-edid_rw_path = os.path.join(script_dir, 'edid-rw', 'edid-rw')
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SAVE_DIR = os.path.join(SCRIPT_DIR, "edid_Files")
+EDID_RW_PATH = os.path.join(SCRIPT_DIR, "edid-rw", "edid-rw")
+VERSION = "1.0.11"
 
-# Your GitHub PAT
-GITHUB_PAT = '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'
+GITHUB_PAT = os.environ.get("GITHUB_PAT")  # MUST be set in environment
 
-# Hardcoded version
-VERSION = "1.0.10"
+DEFAULT_PORT = "2"
 
-def run_command(command, cwd=None):
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+# ----------------------------
+# Helpers
+# ----------------------------
+
+def safe_filename(name: str) -> bool:
+    return name and "/" not in name and ".." not in name
+
+def run_command(cmd, stdin_file=None):
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=cwd)
-        return result.stdout, result.stderr
+        with open(stdin_file, "rb") if stdin_file else subprocess.DEVNULL as stdin:
+            result = subprocess.run(
+                cmd,
+                stdin=stdin,
+                capture_output=True,
+                text=True
+            )
+        return result.stdout, result.stderr, result.returncode
     except Exception as e:
-        return "", str(e)
+        return "", str(e), 1
 
-@app.route('/')
+# ----------------------------
+# Routes
+# ----------------------------
+
+@app.route("/")
 def index():
-    return render_template('index.html', version=VERSION)
+    return render_template("index.html", version=VERSION)
 
-@app.route('/detect_hdmi', methods=['GET'])
+@app.route("/detect_hdmi", methods=["GET"])
 def detect_hdmi():
-    return jsonify({'port': 2})
+    return jsonify({"port": DEFAULT_PORT})
 
-@app.route('/read_edid', methods=['GET'])
+@app.route("/read_edid", methods=["GET"])
 def read_edid():
-    port = request.args.get('port', default='2')
-    cmd = f"sudo \"{edid_rw_path}\" {port} | edid-decode"
-    stdout, stderr = run_command(cmd)
-    if stderr:
-        return jsonify({'error': stderr}), 500
-    return jsonify({'decoded_edid': stdout})
+    port = request.args.get("port", DEFAULT_PORT)
+    cmd = [EDID_RW_PATH, port]
+    stdout, stderr, rc = run_command(cmd)
+    if rc != 0:
+        return jsonify({"error": stderr}), 500
+    return jsonify({"raw_edid": stdout})
 
-# --- EDID Files Management ---
+# ----------------------------
+# EDID File Management
+# ----------------------------
 
-@app.route('/list_files', methods=['GET'])
+@app.route("/list_files", methods=["GET"])
 def list_files():
-    files = [f for f in os.listdir(save_dir) if os.path.isfile(os.path.join(save_dir, f))]
-    return jsonify({'files': files})
+    files = sorted(
+        f for f in os.listdir(SAVE_DIR)
+        if os.path.isfile(os.path.join(SAVE_DIR, f))
+    )
+    return jsonify({"files": files})
 
-@app.route('/read_edid_file', methods=['GET'])
+@app.route("/read_edid_file", methods=["GET"])
 def read_edid_file():
-    filename = request.args.get('filename')
-    filepath = os.path.join(save_dir, filename)
-    if not os.path.exists(filepath):
-        return jsonify({'error': 'File not found'}), 404
-    try:
-        with open(filepath, 'rb') as f:
-            data = f.read()
-        b64_data = base64.b64encode(data).decode('utf-8')
-        return jsonify({'edid_content': b64_data})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    filename = request.args.get("filename", "")
+    if not safe_filename(filename):
+        return jsonify({"error": "Invalid filename"}), 400
 
-@app.route('/write_edid_from_file', methods=['POST'])
+    path = os.path.join(SAVE_DIR, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+
+    with open(path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+
+    return jsonify({"edid_content": encoded})
+
+@app.route("/write_edid_from_file", methods=["POST"])
 def write_edid_from_file():
-    data = request.get_json()
-    filename = data.get('filename')
-    port = data.get('port', '2')
-    filepath = os.path.join(save_dir, filename)
-    if not os.path.exists(filepath):
-        return jsonify({'error': 'File not found'}), 404
-    cmd = f"sudo \"{edid_rw_path}\" -w {port} < \"{filepath}\""
-    stdout, stderr = run_command(cmd)
-    if stderr:
-        return jsonify({'error': stderr}), 500
-    return jsonify({'message': f'EDID written from {filename}.'})
+    data = request.get_json(force=True)
+    filename = data.get("filename")
+    port = data.get("port", DEFAULT_PORT)
 
-@app.route('/verify_edid', methods=['POST'])
+    if not safe_filename(filename):
+        return jsonify({"error": "Invalid filename"}), 400
+
+    path = os.path.join(SAVE_DIR, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+
+    cmd = [EDID_RW_PATH, "-w", port]
+    stdout, stderr, rc = run_command(cmd, stdin_file=path)
+
+    if rc != 0:
+        return jsonify({"error": stderr}), 500
+
+    return jsonify({"message": f"EDID written from {filename}."})
+
+@app.route("/verify_edid", methods=["POST"])
 def verify_edid():
-    data = request.get_json()
-    filename = data.get('filename')
-    port = data.get('port', '2')
-    filepath = os.path.join(save_dir, filename)
-    temp_file = os.path.join(save_dir, 'current_EDID.bin')
+    data = request.get_json(force=True)
+    filename = data.get("filename")
+    port = data.get("port", DEFAULT_PORT)
 
-    # Save current EDID
-    cmd_read = f"sudo \"{edid_rw_path}\" {port} > \"{temp_file}\""
-    run_command(cmd_read)
+    if not safe_filename(filename):
+        return jsonify({"error": "Invalid filename"}), 400
 
-    # Compare with saved file
-    cmd_diff = f"diff \"{filepath}\" \"{temp_file}\""
-    stdout, _ = run_command(cmd_diff)
+    reference = os.path.join(SAVE_DIR, filename)
+    current = os.path.join(SAVE_DIR, "_current_edid.bin")
 
-    match = (stdout.strip() == '')
-    return jsonify({'match': match})
+    # Read current EDID
+    cmd = [EDID_RW_PATH, port]
+    stdout, stderr, rc = run_command(cmd)
+    if rc != 0:
+        return jsonify({"error": stderr}), 500
 
-# --- Repository update with PAT ---
+    with open(current, "wb") as f:
+        f.write(stdout.encode())
 
-@app.route('/update_repo', methods=['POST'])
+    match = subprocess.run(
+        ["diff", reference, current],
+        capture_output=True
+    ).returncode == 0
+
+    return jsonify({"match": match})
+
+# ----------------------------
+# Repository Update
+# ----------------------------
+
+@app.route("/update_repo", methods=["POST"])
 def update_repo():
-    passcode = request.get_json().get('passcode', '')
-    # Optional: add passcode check for security
-    # if passcode!= 'your_secure_passcode':
-    #     return jsonify({'error': 'Invalid passcode'}), 403
-
     if not GITHUB_PAT:
-        return jsonify({'error': 'GitHub PAT not configured'}), 500
+        return jsonify({"error": "GITHUB_PAT not set"}), 500
 
-    # Directory is parent of app.py
-    repo_dir = os.path.abspath(os.path.join(script_dir, '..'))
+    repo_dir = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+    repo_url = "https://github.com/padge81/edid-emulator-webapp.git"
+    auth_url = repo_url.replace("https://", f"https://{GITHUB_PAT}@")
 
-    repo_url = 'https://github.com/padge81/edid-emulator-webapp.git'
-    auth_repo_url = repo_url.replace('https://', f'https://{GITHUB_PAT}@')
+    result = subprocess.run(
+        ["git", "-C", repo_dir, "pull", auth_url],
+        capture_output=True,
+        text=True
+    )
 
-    # Run git pull
-    cmd = ['git', '-C', repo_dir, 'pull', auth_repo_url]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            return jsonify({'result': 'Repository updated successfully'})
-        else:
-            return jsonify({'error': f'Failed to update repository: {result.stderr}'}), 500
-    except FileNotFoundError:
-        return jsonify({'error': 'Git executable not found'}), 500
-        
-     # Restart the app
-    restart_cmd = f'python3 {os.path.join(script_dir, "app.py")}'
-    subprocess.run(restart_cmd, shell=True, check=True)  # Run the restart command
+    if result.returncode != 0:
+        return jsonify({"error": result.stderr}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Graceful restart (let systemd/docker restart us)
+    os.kill(os.getpid(), signal.SIGTERM)
+
+    return jsonify({"message": "Repository updated, restarting..."})
+
+# ----------------------------
+# Main
+# ----------------------------
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

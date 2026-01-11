@@ -1,116 +1,133 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8">
 <title>EDID Management</title>
+
 <style>
-  body { font-family: Arial, sans-serif; margin: 20px; }
-  #edidPreview { width: 100%; height: 200px; overflow: auto; border: 1px solid #ccc; padding: 10px; white-space: pre; font-family: monospace; }
-  select, input, button { margin: 10px 0; display: block; width: 300px; }
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+select, input, button {
+    margin: 6px 0;
+    width: 320px;
+}
+textarea {
+    width: 100%;
+    height: 220px;
+    font-family: monospace;
+}
+#status {
+    margin-top: 10px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    background: #f8f8f8;
+}
 </style>
 </head>
+
 <body>
 
 <h2>EDID Files Management</h2>
 
-<h3>Select Saved EDID File</h3>
-<select id="savedFilesDropdown"></select>
-<button onclick="loadAndPreview()">Load & Preview</button>
+<select id="files"></select>
+<button onclick="loadFile()">Load & Preview</button>
 
-<h4>EDID Preview (Hex)</h4>
-<textarea id="edidPreview" readonly></textarea>
+<textarea id="preview" readonly></textarea>
 
-<h3>Enter Passcode for Update</h3>
-<input type="password" id="passcodeInput" placeholder="Enter passcode" />
+<button onclick="writeEdid()">Write EDID</button>
+<button onclick="verifyEdid()">Verify EDID</button>
 
-<!-- Buttons -->
-<button onclick="loadSavedFiles()">Refresh File List</button>
-<button onclick="writeFromPreview()">Write EDID</button>
-<button onclick="verifyEDID()">Verify EDID</button>
-<button onclick="updateRepository()">Update Repository</button>
+<h3>Repository</h3>
+<input type="password" id="passcode" placeholder="Optional passcode">
+<button onclick="updateRepo()">Update Repository</button>
+
+<div id="status"></div>
 
 <p>Version: {{ version }}</p>
 
 <script>
-// Load file list
-window.onload = loadSavedFiles;
+const statusBox = document.getElementById("status");
 
-function loadSavedFiles() {
-    fetch('/list_files')
-        .then(res => res.json())
-        .then(data => {
-            const dropdown = document.getElementById('savedFilesDropdown');
-            dropdown.innerHTML = '';
-            data.files.forEach(f => {
-                const option = document.createElement('option');
-                option.value = f;
-                option.text = f;
-                dropdown.appendChild(option);
+function setStatus(msg) {
+    statusBox.textContent = msg;
+}
+
+function loadFiles() {
+    fetch("/list_files")
+        .then(r => r.json())
+        .then(d => {
+            const sel = document.getElementById("files");
+            sel.innerHTML = "";
+            d.files.forEach(f => {
+                const o = document.createElement("option");
+                o.value = f;
+                o.textContent = f;
+                sel.appendChild(o);
             });
         });
 }
 
-// Load and preview selected file as hex
-function loadAndPreview() {
-    const filename = document.getElementById('savedFilesDropdown').value;
-    fetch('/read_edid_file?filename=' + encodeURIComponent(filename))
-        .then(res => res.json())
-        .then(data => {
-            if (data.error) {
-                alert('Error: ' + data.error);
-                document.getElementById('edidPreview').value = '';
-            } else {
-                const binStr = atob(data.edid_content);
-                let hexStr = '';
-                for (let i = 0; i < binStr.length; i++) {
-                    hexStr += ('0' + binStr.charCodeAt(i).toString(16)).slice(-2) + ' ';
-                    if ((i + 1) % 16 === 0) hexStr += '\n';
-                }
-                document.getElementById('edidPreview').value = hexStr;
+function loadFile() {
+    const file = document.getElementById("files").value;
+    if (!file) return setStatus("Select a file first");
+
+    fetch(`/read_edid_file?filename=${encodeURIComponent(file)}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) return setStatus(d.error);
+
+            const bin = atob(d.edid_content);
+            let hex = "";
+            for (let i = 0; i < bin.length; i++) {
+                hex += bin.charCodeAt(i).toString(16).padStart(2, "0") + " ";
+                if ((i + 1) % 16 === 0) hex += "\n";
             }
+            document.getElementById("preview").value = hex;
+            setStatus("Loaded " + file);
         });
 }
 
-// Write EDID from selected file
-function writeFromPreview() {
-    const filename = document.getElementById('savedFilesDropdown').value;
-    fetch('/write_edid_from_file', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: filename, port: '2' })
-    }).then(res => res.json())
-      .then(data => alert(data.message || data.error));
+function writeEdid() {
+    const file = document.getElementById("files").value;
+    if (!file) return setStatus("Select a file first");
+
+    fetch("/write_edid_from_file", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ filename: file, port: "2" })
+    })
+    .then(r => r.json())
+    .then(d => setStatus(d.message || d.error));
 }
 
-// Verify current EDID matches file
-function verifyEDID() {
-    const filename = document.getElementById('savedFilesDropdown').value;
-    fetch('/verify_edid', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: filename, port: '2' })
-    }).then(res => res.json())
-      .then(data => {
-        if (data.match) alert('Verification successful: EDID matches.');
-        else alert('Verification failed: EDID does not match.');
-      });
+function verifyEdid() {
+    const file = document.getElementById("files").value;
+    if (!file) return setStatus("Select a file first");
+
+    fetch("/verify_edid", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ filename: file, port: "2" })
+    })
+    .then(r => r.json())
+    .then(d => {
+        setStatus(d.match ? "Verification successful" : "Verification failed");
+    });
 }
 
-// Update repository
-function updateRepository() {
-    const passcode = document.getElementById('passcodeInput').value;
-    fetch('/update_repo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode: passcode })
-    }).then(res => res.json())
-      .then(data => {
-        if (data.error) alert('Error: ' + data.error);
-        else alert('Success: ' + data.message);
-        // Optionally, refresh file list if repo changes
-        loadSavedFiles();
-      });
+function updateRepo() {
+    fetch("/update_repo", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ passcode: document.getElementById("passcode").value })
+    })
+    .then(r => r.json())
+    .then(d => setStatus(d.message || d.error));
 }
+
+loadFiles();
 </script>
 
 </body>
