@@ -100,13 +100,16 @@ def write_edid():
     if not os.path.isfile(path):
         return jsonify({"error": "EDID file not found"}), 404
 
-    # WRITE (correct edid-rw syntax)
-    _, stderr, rc = run_command([
-        EDID_RW_PATH,
-        "-w",
-        "-f", path,
-        port
-    ])
+    # Load EDID binary
+    with open(path, "rb") as f:
+        edid_data = f.read()
+
+    # WRITE (stdin pipe is REQUIRED)
+    stdout, stderr, rc = run_command(
+        [EDID_RW_PATH, "-w", "-f", port],
+        input_data=edid_data
+    )
+
     if rc != 0:
         return jsonify({"error": stderr}), 500
 
@@ -124,6 +127,7 @@ def write_edid():
         "written": True,
         "verified": verified
     })
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
