@@ -7,32 +7,30 @@
         textarea { width: 90%; height: 200px; }
         button, select, input { margin: 5px 5px 5px 0; }
         pre { background: #111; color: #0f0; padding: 10px; overflow-x: auto; }
-		.space-around {padding-left: 20px;}
+        .space-around { padding-left: 20px; }
         .status { padding: 8px; font-weight: bold; border-radius: 4px; }
         .idle { background: #eee; }
         .working { background: #ffeaa7; }
         .success { background: #55efc4; }
         .warning { background: #fab1a0; }
         .error { background: #ff7675; }
-		.container {padding: 0 30px; }
-    margin: auto;
-  }
+        .container { padding: 0 30px; }
     </style>
 </head>
 <body>
 
 <div style="display:flex; justify-content:space-between;">
     <div>Version: <b id="version">loading…</b></div>
-    
 </div>
+
 <div class="space-around">
-<button onclick="updateRepo()">Update</button>
+    <button onclick="updateRepo()">Update</button>
 </div>
+
 <hr>
 
 <div class="space-around">
 <h2>EDID Emulator</h2>
-
 
 <label>I²C Port:</label>
 <select id="portSelect">
@@ -41,20 +39,23 @@
     {% endfor %}
 </select>
 </div>
+
 <hr>
+
 <div class="container">
     <button onclick="readEdid()">Read EDID</button>
     <button onclick="resetEdid()">Reset</button>
-    <button id="toggleView" onclick="toggleView()" >View: Binary</button>
+    <button id="toggleView" onclick="toggleView()" disabled>View: Binary</button>
 </div>
 
 <div class="space-around">
-<p>Match: <b id="matchResult">—</b></p>
+    <p>Match: <b id="matchResult">—</b></p>
 </div>
 
 <div class="container">
-<textarea id="preview" readonly></textarea>
+    <textarea id="preview" readonly></textarea>
 </div>
+
 <div class="space-around">
 <h3>Save New EDID</h3>
 <input id="saveName" placeholder="filename.bin" disabled>
@@ -71,6 +72,7 @@
 
 <h3>Status</h3>
 </div>
+
 <div id="status" class="status idle">Idle</div>
 
 <div id="diffBlock" style="display:none;">
@@ -79,22 +81,45 @@
 </div>
 
 <script>
-let binaryB64 = "", decoded = "", view = "binary";
+const el = {};
+
+window.addEventListener("DOMContentLoaded", () => {
+    el.status = document.getElementById("status");
+    el.preview = document.getElementById("preview");
+    el.matchResult = document.getElementById("matchResult");
+    el.toggleView = document.getElementById("toggleView");
+    el.saveBtn = document.getElementById("saveBtn");
+    el.saveName = document.getElementById("saveName");
+    el.writeSelect = document.getElementById("writeSelect");
+    el.portSelect = document.getElementById("portSelect");
+    el.diffBlock = document.getElementById("diffBlock");
+    el.diff = document.getElementById("diff");
+    el.version = document.getElementById("version");
+
+    loadVersion();
+});
+
+let binaryB64 = "";
+let decoded = "";
+let view = "binary";
 
 function setStatus(msg, cls) {
-    status.textContent = msg;
-    status.className = "status " + cls;
+    if (!el.status) return;
+    el.status.textContent = msg;
+    el.status.className = "status " + cls;
 }
 
 function loadVersion() {
-    fetch("/version").then(r => r.json())
-        .then(d => version.textContent = d.version);
+    fetch("/version")
+        .then(r => r.json())
+        .then(d => el.version.textContent = d.version);
 }
 
 function updateRepo() {
     if (!confirm("Update from GitHub?")) return;
     setStatus("Updating…", "working");
-    fetch("/update_repo", {method:"POST"})
+
+    fetch("/update_repo", { method: "POST" })
         .then(r => r.json())
         .then(d => {
             setStatus(d.error ? "Update failed" : "Updated ✔", d.error ? "error" : "success");
@@ -103,21 +128,22 @@ function updateRepo() {
 }
 
 function readEdid() {
-    diffBlock.style.display = "none";
+    el.diffBlock.style.display = "none";
     setStatus("Reading EDID…", "working");
 
-    fetch(`/read_and_compare_edid?port=${portSelect.value}`)
+    fetch(`/read_and_compare_edid?port=${el.portSelect.value}`)
         .then(r => r.json())
         .then(d => {
             if (d.error) return setStatus(d.error, "error");
 
             binaryB64 = d.binary_b64;
             decoded = d.decoded;
-            matchResult.textContent = d.match;
-            toggleView.disabled = false;
 
-            saveBtn.disabled = d.match !== "UNKNOWN";
-            saveName.disabled = d.match !== "UNKNOWN";
+            el.matchResult.textContent = d.match;
+            el.toggleView.disabled = false;
+
+            el.saveBtn.disabled = d.match !== "UNKNOWN";
+            el.saveName.disabled = d.match !== "UNKNOWN";
 
             setBinaryView();
             setStatus("Read complete ✔", "success");
@@ -130,72 +156,77 @@ function toggleView() {
 
 function setBinaryView() {
     view = "binary";
-    toggleView.textContent = "View: Binary";
+    el.toggleView.textContent = "View: Binary";
+
     const bin = atob(binaryB64);
     let out = "";
     for (let i = 0; i < bin.length; i++) {
         out += bin.charCodeAt(i).toString(16).padStart(2, "0") + " ";
         if ((i + 1) % 16 === 0) out += "\n";
     }
-    preview.value = out;
+    el.preview.value = out;
 }
 
 function setDecodedView() {
     view = "decoded";
-    toggleView.textContent = "View: Decoded";
-    preview.value = decoded;
+    el.toggleView.textContent = "View: Decoded";
+    el.preview.value = decoded;
 }
 
 function saveEdid() {
     fetch("/save_edid", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({filename:saveName.value, binary:binaryB64})
-    }).then(() => setStatus("Saved ✔","success"));
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            filename: el.saveName.value,
+            binary: binaryB64
+        })
+    }).then(() => setStatus("Saved ✔", "success"));
 }
 
 function confirmWrite() {
-    const f = writeSelect.value;
+    const f = el.writeSelect.value;
     if (!f) return alert("Select EDID");
-    if (!confirm(`Write EDID '${f}' to port ${portSelect.value}?`)) return;
+    if (!confirm(`Write EDID '${f}' to port ${el.portSelect.value}?`)) return;
     writeEdid();
 }
 
 function writeEdid() {
-    diffBlock.style.display = "none";
+    el.diffBlock.style.display = "none";
     setStatus("Writing EDID…", "working");
 
     fetch("/write_edid", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({filename:writeSelect.value, port:portSelect.value})
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            filename: el.writeSelect.value,
+            port: el.portSelect.value
+        })
     })
     .then(r => r.json())
     .then(d => {
-        if (d.error) return setStatus(d.error,"error");
+        if (d.error) return setStatus(d.error, "error");
 
         if (d.verified) {
-            setStatus("Write + Verify ✔","success");
-            readEdid();   // AUTO REFRESH
+            setStatus("Write + Verify ✔", "success");
+            readEdid(); // auto refresh
         } else {
-            setStatus("Verify FAILED","warning");
-            diff.textContent = d.diff || "";
-            diffBlock.style.display = "block";
+            setStatus("Verify FAILED", "warning");
+            el.diff.textContent = d.diff || "";
+            el.diffBlock.style.display = "block";
         }
     });
 }
 
 function resetEdid() {
-    preview.value = "";
-    matchResult.textContent = "—";
-    toggleView.disabled = true;
-    saveBtn.disabled = true;
-    saveName.disabled = true;
-    diffBlock.style.display = "none";
-    setStatus("Idle","idle");
+    el.preview.value = "";
+    el.matchResult.textContent = "—";
+    el.toggleView.disabled = true;
+    el.saveBtn.disabled = true;
+    el.saveName.disabled = true;
+    el.diffBlock.style.display = "none";
+    setStatus("Idle", "idle");
 }
-
-loadVersion();
 </script>
 
 </body>

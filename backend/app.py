@@ -89,10 +89,9 @@ def read_and_compare_edid():
 
     for fname in os.listdir(SAVE_DIR):
         path = os.path.join(SAVE_DIR, fname)
-        if os.path.isfile(path):
-            if file_hash(path) == current_hash:
-                match = fname
-                break
+        if os.path.isfile(path) and file_hash(path) == current_hash:
+            match = fname
+            break
 
     return jsonify({
         "match": match,
@@ -130,17 +129,14 @@ def write_edid():
     with open(path, "rb") as f:
         intended = f.read()
 
-    # WRITE
     _, stderr, rc = run_command(
         [EDID_RW_PATH, "-w", "-f", port],
         input_data=intended
     )
-
     if rc != 0:
         return jsonify({"error": stderr}), 500
 
-    # READ BACK
-    read_back, stderr, rc = run_command([EDID_RW_PATH, port])
+    read_back, _, rc = run_command([EDID_RW_PATH, port])
     if rc != 0:
         return jsonify({"written": True, "verified": False})
 
@@ -158,11 +154,7 @@ def write_edid():
             )
         )
 
-    return jsonify({
-        "written": True,
-        "verified": ok,
-        "diff": diff
-    })
+    return jsonify({"written": True, "verified": ok, "diff": diff})
 
 
 if __name__ == "__main__":
