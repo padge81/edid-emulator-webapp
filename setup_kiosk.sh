@@ -12,8 +12,6 @@ mkdir -p "$SERVICE_DIR"
 # -------------------------------------------------
 # Create kiosk startup script
 # -------------------------------------------------
-echo "Creating start_edid_ui.sh..."
-
 cat > "$APP_DIR/start_edid_ui.sh" <<'EOF'
 #!/bin/bash
 
@@ -76,24 +74,22 @@ for i in {1..30}; do
 done
 
 # -------------------------------------------------
-# Launch Epiphany normally
+# Launch Epiphany
 # -------------------------------------------------
 echo "Launching Epiphany..."
 epiphany "$URL" &
 
 # -------------------------------------------------
-# Force fullscreen (PID-based, reliable)
+# Force fullscreen (SAFE METHOD)
 # -------------------------------------------------
-echo "Waiting for Epiphany window..."
-for i in {1..30}; do
-    EPIPHANY_PID=$(pgrep -n epiphany || true)
-    if [ -n "$EPIPHANY_PID" ]; then
-        WIN_ID=$(xdotool search --onlyvisible --pid "$EPIPHANY_PID" | head -n1)
-        if [ -n "$WIN_ID" ]; then
-            xdotool windowactivate --sync "$WIN_ID" key F11
-            echo "Fullscreen applied"
-            break
-        fi
+echo "Waiting for browser to appear..."
+for i in {1..40}; do
+    if wmctrl -l | grep -i epiphany >/dev/null; then
+        wmctrl -a epiphany
+        sleep 0.3
+        xdotool key F11
+        echo "Fullscreen applied"
+        break
     fi
     sleep 0.5
 done
@@ -105,10 +101,8 @@ EOF
 chmod +x "$APP_DIR/start_edid_ui.sh"
 
 # -------------------------------------------------
-# Create systemd user service
+# systemd user service
 # -------------------------------------------------
-echo "Creating systemd user service..."
-
 cat > "$SERVICE_DIR/edid-emulator.service" <<EOF
 [Unit]
 Description=EDID Emulator Kiosk
@@ -126,18 +120,12 @@ Environment=XAUTHORITY=$HOME/.Xauthority
 WantedBy=default.target
 EOF
 
-# -------------------------------------------------
-# Enable systemd user service
-# -------------------------------------------------
-echo "Enabling systemd service..."
 systemctl --user daemon-reload
 systemctl --user enable edid-emulator.service
 
 # -------------------------------------------------
-# Create desktop launcher
+# Desktop launcher
 # -------------------------------------------------
-echo "Creating desktop icon..."
-
 mkdir -p "$HOME/Desktop"
 
 cat > "$HOME/Desktop/EDID-Emulator.desktop" <<EOF
@@ -154,7 +142,6 @@ chmod +x "$HOME/Desktop/EDID-Emulator.desktop"
 
 echo
 echo "=== Setup complete ==="
-echo
 echo "Reboot recommended:"
 echo "  sudo reboot"
 echo
