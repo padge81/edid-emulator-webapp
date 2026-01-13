@@ -25,7 +25,7 @@
 
         button, select, input {
             font-size: 18px;
-            padding: 12px 16px;
+            padding: 14px 18px;
             margin: 6px 4px 6px 0;
             border-radius: 6px;
             border: none;
@@ -38,6 +38,18 @@
 
         button:active {
             background: #34495e;
+        }
+
+        .danger {
+            background: #c0392b;
+        }
+
+        .danger:active {
+            background: #e74c3c;
+        }
+
+        .secondary {
+            background: #555;
         }
 
         select, input {
@@ -59,7 +71,7 @@
         }
 
         .status {
-            padding: 10px;
+            padding: 12px;
             font-size: 18px;
             font-weight: bold;
             border-radius: 6px;
@@ -117,18 +129,16 @@
 <hr>
 
 <!-- Port selection -->
-<div>
-    <label><strong>I²C Port:</strong></label><br>
-    <select id="portSelect" class="full">
-        {% for p in ports %}
-            <option value="{{ p }}" {% if p == default_port %}selected{% endif %}>{{ p }}</option>
-        {% endfor %}
-    </select>
-</div>
+<label><strong>I²C Port:</strong></label>
+<select id="portSelect" class="full">
+    {% for p in ports %}
+        <option value="{{ p }}" {% if p == default_port %}selected{% endif %}>{{ p }}</option>
+    {% endfor %}
+</select>
 
 <hr>
 
-<!-- Main controls -->
+<!-- EDID Controls -->
 <div class="row">
     <button onclick="readEdid()">Read EDID</button>
     <button onclick="resetEdid()">Reset</button>
@@ -159,6 +169,24 @@
     {% endfor %}
 </select>
 <button onclick="confirmWrite()">Write</button>
+
+<hr>
+
+<!-- USB -->
+<h3>USB</h3>
+<div class="row">
+    <button class="secondary" onclick="usbImport()">USB Import</button>
+    <button class="secondary" onclick="usbExport()">USB Export</button>
+</div>
+
+<hr>
+
+<!-- System -->
+<h3>System</h3>
+<div class="row">
+    <button class="danger" onclick="rebootSystem()">Reboot</button>
+    <button class="danger" onclick="shutdownSystem()">Shutdown</button>
+</div>
 
 <hr>
 
@@ -199,6 +227,8 @@ function setStatus(msg, cls) {
     el.status.textContent = msg;
     el.status.className = "status " + cls;
 }
+
+/* ---------- existing logic unchanged ---------- */
 
 function loadVersion() {
     fetch("/version")
@@ -317,6 +347,42 @@ function resetEdid() {
     el.saveName.disabled = true;
     el.diffBlock.style.display = "none";
     setStatus("Idle", "idle");
+}
+
+/* ---------- NEW USB + SYSTEM ---------- */
+
+function usbImport() {
+    if (!confirm("Import EDID files from USB?")) return;
+    setStatus("Importing from USB…", "working");
+
+    fetch("/usb/import", { method: "POST" })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) setStatus(d.error, "error");
+            else setStatus("USB Import complete ✔", "success");
+        });
+}
+
+function usbExport() {
+    if (!confirm("Export EDID files to USB?")) return;
+    setStatus("Exporting to USB…", "working");
+
+    fetch("/usb/export", { method: "POST" })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) setStatus(d.error, "error");
+            else setStatus("USB Export complete ✔", "success");
+        });
+}
+
+function rebootSystem() {
+    if (!confirm("Reboot system?")) return;
+    fetch("/system/reboot", { method: "POST" });
+}
+
+function shutdownSystem() {
+    if (!confirm("Shutdown system?")) return;
+    fetch("/system/shutdown", { method: "POST" });
 }
 </script>
 
