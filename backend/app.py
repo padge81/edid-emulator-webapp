@@ -1,144 +1,200 @@
 #!/usr/bin/env python3
-
 import os
-import hashlib
 import subprocess
-from pathlib import Path
-from flask import Flask, jsonify, request, render_template
+import base64
+import json
+import difflib
+import time
+from flask import Flask, render_template, request, jsonify
 
-BASE = Path(__file__).resolve().parent
-EDID_DIR = BASE / "edid_files"
-EDID_DIR.mkdir(exist_ok=True)
+APP_VERSION = "1.3.0"
 
-app = Flask(__name__, template_folder="templates")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+EDID_DIR = os.path.join(BASE_DIR, "edid_files")
+USB_MOUNT_BASE = "/media"
 
+app = Flask(__name__)
 
-# --------------------------------------------------
+# -------------------------------------------------
 # Helpers
-# --------------------------------------------------
+# -------------------------------------------------
 
-def sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for c in iter(lambda: f.read(8192), b""):
-            h.update(c)
-    return h.hexdigest()
+def run(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True)
 
+def list_ports():
+    ports = []
+    for i in range(0, 4):
+        path = f"/dev/i2c-{i}"
+        if os.path.exists(path):
+            ports.append(path)
+    return ports or ["/dev/i2c-1"]
 
-def usb_mounts():
+def list_edid_files():
+    if not os.path.exists(EDID_DIR):
+        os.makedirs(EDID_DIR)
+    return sorted(f for f in os.listdir(EDID_DIR) if f.endswith(".bin"))
+
+def read_edid(port):
+    out = run(["get-edid", "-b", port])
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr)
+    return out.stdout.encode("latin1")
+
+def decode_edid(bin_data):
+    p = subprocess.Popen(
+        ["edid-decode"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    out, _ = p.communicate(bin_data.decode("latin1"))
+    return out
+
+def compare_known(edid_bin):
+    for fname in list_edid_files():
+        with open(os.path.join(EDID_DIR, fname), "rb") as f:
+            if f.read() == edid_bin:
+                return fname
+    return "UNKNOWN"
+
+def find_usb_mounts():
     mounts = []
-    for root in ("/media", "/run/media"):
-        p = Path(root)
-        if p.exists():
-            for u in p.iterdir():
-                if u.is_dir():
-                    for d in u.iterdir():
-                        if d.is_dir():
-                            mounts.append(str(d))
+    if os.path.exists(USB_MOUNT_BASE):
+        for d in os.listdir(USB_MOUNT_BASE):
+            path = os.path.join(USB_MOUNT_BASE, d)
+            if os.path.ismount(path):
+                mounts.append(path)
     return mounts
 
-
-def edid_index():
-    idx = {}
-    for f in EDID_DIR.glob("*.bin"):
-        idx[f.name] = sha256(f)
-    return idx
-
-
-# --------------------------------------------------
+# -------------------------------------------------
 # Routes
-# --------------------------------------------------
+# -------------------------------------------------
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        ports=list_ports(),
+        default_port=list_ports()[0],
+        files=list_edid_files(),
+    )
 
+@app.route("/version")
+def version():
+    return jsonify(version=APP_VERSION)
 
-@app.route("/usb")
-def list_usb():
-    return jsonify(usb_mounts())
+@app.route("/update_repo", methods=["POST"])
+def update_repo():
+    try:
+        run(["git", "pull"])
+        return jsonify(ok=True)
+    except Exception as e:
+        return jsonify(error=str(e))
 
+@app.route("/read_and_compare_edid")
+def read_and_compare():
+    try:
+        port = request.args.get("port")
+        edid_bin = read_edid(port)
+        decoded = decode_edid(edid_bin)
+        match = compare_known(edid_bin)
 
-@app.route("/usb_scan")
-def usb_scan():
-    path = Path(request.args.get("path", ""))
-    if not path.exists():
-        return jsonify({"error": "USB not found"}), 400
+        return jsonify(
+            binary_b64=base64.b64encode(edid_bin).decode(),
+            decoded=decoded,
+            match=match,
+        )
+    except Exception as e:
+        return jsonify(error=str(e))
 
-    local_hashes = edid_index()
-    results = []
-
-    for f in path.glob("*.bin"):
-        h = sha256(f)
-        status = "new"
-        for name, lh in local_hashes.items():
-            if lh == h:
-                status = "duplicate"
-                break
-        results.append({
-            "name": f.name,
-            "size": f.stat().st_size,
-            "hash": h,
-            "status": status
-        })
-
-    return jsonify(results)
-
-
-@app.route("/usb_import", methods=["POST"])
-def usb_import():
+@app.route("/save_edid", methods=["POST"])
+def save_edid():
     data = request.json
-    path = Path(data["path"])
-    selected = data["files"]
+    fname = data["filename"]
+    if not fname.endswith(".bin"):
+        fname += ".bin"
 
-    local_hashes = edid_index()
-    imported, skipped = [], []
+    path = os.path.join(EDID_DIR, fname)
+    if os.path.exists(path):
+        return jsonify(error="File already exists")
 
-    for name in selected:
-        src = path / name
-        h = sha256(src)
-        if h in local_hashes.values():
-            skipped.append(name)
-            continue
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(data["binary"]))
 
-        dst = EDID_DIR / name
-        if dst.exists():
-            dst = EDID_DIR / f"imported_{name}"
+    return jsonify(ok=True)
 
-        dst.write_bytes(src.read_bytes())
-        imported.append(dst.name)
+@app.route("/write_edid", methods=["POST"])
+def write_edid():
+    data = request.json
+    fname = data["filename"]
+    port = data["port"]
 
-    return jsonify({"imported": imported, "skipped": skipped})
+    path = os.path.join(EDID_DIR, fname)
+    if not os.path.exists(path):
+        return jsonify(error="EDID file not found")
 
+    run(["i2cset", "-f", "-y", port.split("-")[-1], "0x50", "0x00"])
+    run(["edid-rw", "-w", path, port])
+    time.sleep(1)
 
-@app.route("/usb_export", methods=["POST"])
+    # verify
+    written = read_edid(port)
+    with open(path, "rb") as f:
+        original = f.read()
+
+    if written == original:
+        return jsonify(verified=True)
+
+    diff = "\n".join(
+        difflib.unified_diff(
+            original.hex().split(),
+            written.hex().split(),
+            lineterm="",
+        )
+    )
+    return jsonify(verified=False, diff=diff)
+
+@app.route("/usb/import", methods=["POST"])
+def usb_import():
+    mounts = find_usb_mounts()
+    imported = 0
+
+    for m in mounts:
+        for f in os.listdir(m):
+            if f.endswith(".bin"):
+                src = os.path.join(m, f)
+                dst = os.path.join(EDID_DIR, f)
+                if not os.path.exists(dst):
+                    with open(src, "rb") as s, open(dst, "wb") as d:
+                        d.write(s.read())
+                    imported += 1
+
+    return jsonify(message=f"Imported {imported} new EDID files")
+
+@app.route("/usb/export", methods=["POST"])
 def usb_export():
-    path = Path(request.json["path"])
-    exported, skipped = [], []
+    mounts = find_usb_mounts()
+    exported = 0
 
-    for f in EDID_DIR.glob("*.bin"):
-        dst = path / f.name
-        if dst.exists():
-            skipped.append(f.name)
-            continue
-        dst.write_bytes(f.read_bytes())
-        exported.append(f.name)
+    for m in mounts:
+        for f in list_edid_files():
+            src = os.path.join(EDID_DIR, f)
+            dst = os.path.join(m, f)
+            if not os.path.exists(dst):
+                with open(src, "rb") as s, open(dst, "wb") as d:
+                    d.write(s.read())
+                exported += 1
 
-    return jsonify({"exported": exported, "skipped": skipped})
-
-
-@app.route("/usb_eject", methods=["POST"])
-def usb_eject():
-    path = request.json["path"]
-    subprocess.run(["udisksctl", "unmount", "-b", path], stderr=subprocess.DEVNULL)
-    return jsonify({"ok": True})
-
+    return jsonify(message=f"Exported {exported} EDID files")
 
 @app.route("/shutdown", methods=["POST"])
 def shutdown():
-    subprocess.Popen(["sudo", "shutdown", "-h", "now"])
-    return jsonify({"ok": True})
+    run(["sudo", "shutdown", "-h", "now"])
+    return ("", 204)
 
+# -------------------------------------------------
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
