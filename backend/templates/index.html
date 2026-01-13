@@ -2,67 +2,157 @@
 <html>
 <head>
     <title>EDID Emulator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
     <style>
-        body { font-family: Arial; max-width: 960px; margin: auto; }
-        textarea { width: 90%; height: 200px; }
-        button, select, input { margin: 5px 5px 5px 0; }
-        pre { background: #111; color: #0f0; padding: 10px; overflow-x: auto; }
-        .space-around { padding-left: 20px; }
-        .status { padding: 8px; font-weight: bold; border-radius: 4px; }
-        .idle { background: #eee; }
-        .working { background: #ffeaa7; }
-        .success { background: #55efc4; }
-        .warning { background: #fab1a0; }
-        .error { background: #ff7675; }
-        .container { padding: 0 30px; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #0b0b0b;
+            color: #f0f0f0;
+            margin: 0;
+            padding: 10px;
+        }
+
+        h2, h3 {
+            margin: 10px 0 6px 0;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid #333;
+            margin: 12px 0;
+        }
+
+        button, select, input {
+            font-size: 18px;
+            padding: 12px 16px;
+            margin: 6px 4px 6px 0;
+            border-radius: 6px;
+            border: none;
+        }
+
+        button {
+            background: #2c3e50;
+            color: #ecf0f1;
+        }
+
+        button:active {
+            background: #34495e;
+        }
+
+        select, input {
+            background: #111;
+            color: #f0f0f0;
+            border: 1px solid #333;
+        }
+
+        textarea {
+            width: 100%;
+            height: 160px;
+            font-family: monospace;
+            font-size: 14px;
+            background: #111;
+            color: #0f0;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 8px;
+        }
+
+        .status {
+            padding: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 6px;
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .idle { background: #2d3436; }
+        .working { background: #b2bec3; color: #000; }
+        .success { background: #00b894; }
+        .warning { background: #e17055; }
+        .error { background: #d63031; }
+
+        pre {
+            background: #111;
+            color: #f55;
+            padding: 10px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 14px;
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .row > * {
+            margin-right: 8px;
+            margin-bottom: 6px;
+        }
+
+        .full {
+            width: 100%;
+        }
+
+        small {
+            color: #aaa;
+        }
     </style>
 </head>
+
 <body>
 
-<div style="display:flex; justify-content:space-between;">
-    <div>Version: <b id="version">loading…</b></div>
-</div>
-
-<div class="space-around">
+<!-- Header -->
+<div class="row" style="justify-content:space-between;">
+    <div>
+        <strong>EDID Emulator</strong><br>
+        <small>Version: <b id="version">loading…</b></small>
+    </div>
     <button onclick="updateRepo()">Update</button>
 </div>
 
 <hr>
 
-<div class="space-around">
-<h2>EDID Emulator</h2>
-
-<label>I²C Port:</label>
-<select id="portSelect">
-    {% for p in ports %}
-        <option value="{{ p }}" {% if p == default_port %}selected{% endif %}>{{ p }}</option>
-    {% endfor %}
-</select>
+<!-- Port selection -->
+<div>
+    <label><strong>I²C Port:</strong></label><br>
+    <select id="portSelect" class="full">
+        {% for p in ports %}
+            <option value="{{ p }}" {% if p == default_port %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+    </select>
 </div>
 
 <hr>
 
-<div class="container">
+<!-- Main controls -->
+<div class="row">
     <button onclick="readEdid()">Read EDID</button>
     <button onclick="resetEdid()">Reset</button>
     <button id="toggleView" onclick="toggleView()" disabled>View: Binary</button>
 </div>
 
-<div class="space-around">
-    <p>Match: <b id="matchResult">—</b></p>
+<div>
+    Match: <strong id="matchResult">—</strong>
 </div>
 
-<div class="container">
-    <textarea id="preview" readonly></textarea>
-</div>
+<textarea id="preview" readonly></textarea>
 
-<div class="space-around">
+<hr>
+
+<!-- Save -->
 <h3>Save New EDID</h3>
-<input id="saveName" placeholder="filename.bin" disabled>
+<input id="saveName" placeholder="filename.bin" class="full" disabled>
 <button id="saveBtn" onclick="saveEdid()" disabled>Save</button>
 
+<hr>
+
+<!-- Write -->
 <h3>Write EDID</h3>
-<select id="writeSelect">
+<select id="writeSelect" class="full">
     <option value="">-- select --</option>
     {% for f in files %}
         <option value="{{ f }}">{{ f }}</option>
@@ -70,11 +160,13 @@
 </select>
 <button onclick="confirmWrite()">Write</button>
 
-<h3>Status</h3>
-</div>
+<hr>
 
+<!-- Status -->
+<h3>Status</h3>
 <div id="status" class="status idle">Idle</div>
 
+<!-- Diff -->
 <div id="diffBlock" style="display:none;">
     <h3>Verification Diff</h3>
     <pre id="diff"></pre>
@@ -104,7 +196,6 @@ let decoded = "";
 let view = "binary";
 
 function setStatus(msg, cls) {
-    if (!el.status) return;
     el.status.textContent = msg;
     el.status.className = "status " + cls;
 }
@@ -209,7 +300,7 @@ function writeEdid() {
 
         if (d.verified) {
             setStatus("Write + Verify ✔", "success");
-            readEdid(); // auto refresh
+            readEdid();
         } else {
             setStatus("Verify FAILED", "warning");
             el.diff.textContent = d.diff || "";
