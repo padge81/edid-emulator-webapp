@@ -7,18 +7,11 @@ SERVICE_DIR="$HOME/.config/systemd/user"
 
 echo "=== EDID Emulator Kiosk Setup ==="
 
-# -------------------------------------------------
-# Ensure required packages exist
-# -------------------------------------------------
-echo "Installing required packages..."
 sudo apt update
 sudo apt install -y wmctrl xdotool curl
 
 mkdir -p "$SERVICE_DIR"
 
-# -------------------------------------------------
-# Create kiosk startup script
-# -------------------------------------------------
 cat > "$APP_DIR/start_edid_ui.sh" <<'EOF'
 #!/bin/bash
 
@@ -36,9 +29,7 @@ export XAUTHORITY="$HOME/.Xauthority"
 echo "DISPLAY=$DISPLAY"
 echo "XAUTHORITY=$XAUTHORITY"
 
-# -------------------------------------------------
-# Wait for X session
-# -------------------------------------------------
+# Wait for X
 for i in {1..30}; do
     if xset q >/dev/null 2>&1; then
         echo "X is ready"
@@ -48,26 +39,19 @@ for i in {1..30}; do
     sleep 1
 done
 
-# -------------------------------------------------
 # Rotate display
-# -------------------------------------------------
 xrandr --output DSI-1 --rotate right || echo "Rotation skipped"
 
-# -------------------------------------------------
 # Map touchscreen
-# -------------------------------------------------
 TOUCH_ID=$(xinput list | grep -i 'ft5x06' | grep -o 'id=[0-9]*' | cut -d= -f2)
 if [ -n "$TOUCH_ID" ]; then
     echo "Mapping touchscreen ID $TOUCH_ID"
     xinput map-to-output "$TOUCH_ID" DSI-1
 fi
 
-# -------------------------------------------------
-# Start Flask backend
-# -------------------------------------------------
+# Start Flask
 cd "$BACKEND_DIR" || exit 1
 [ -f venv/bin/activate ] && source venv/bin/activate
-
 echo "Starting Flask..."
 python3 app.py &
 
@@ -77,21 +61,18 @@ for i in {1..30}; do
     sleep 1
 done
 
-# -------------------------------------------------
-# Launch Epiphany
-# -------------------------------------------------
+# Launch browser
 echo "Launching Epiphany..."
 epiphany "$URL" &
 
-# -------------------------------------------------
-# Force fullscreen (SAFE & RELIABLE)
-# -------------------------------------------------
-echo "Waiting for browser window..."
+# Fullscreen Epiphany (ROBUST)
+echo "Waiting for Epiphany window (by class)..."
 for i in {1..40}; do
-    if wmctrl -l | grep -i epiphany >/dev/null 2>&1; then
-        echo "Epiphany detected — applying fullscreen"
-        wmctrl -a epiphany
-        sleep 0.3
+    WIN_ID=$(xdotool search --onlyvisible --class epiphany 2>/dev/null | head -n 1)
+    if [ -n "$WIN_ID" ]; then
+        echo "Epiphany window detected: $WIN_ID"
+        xdotool windowactivate "$WIN_ID"
+        sleep 0.4
         xdotool key F11
         break
     fi
@@ -104,9 +85,6 @@ EOF
 
 chmod +x "$APP_DIR/start_edid_ui.sh"
 
-# -------------------------------------------------
-# systemd user service
-# -------------------------------------------------
 cat > "$SERVICE_DIR/edid-emulator.service" <<EOF
 [Unit]
 Description=EDID Emulator Kiosk
@@ -127,10 +105,4 @@ EOF
 systemctl --user daemon-reload
 systemctl --user enable edid-emulator.service
 
-echo
-echo "=== Setup complete ==="
-echo "Reboot recommended:"
-echo "  sudo reboot"
-echo
-echo "Log file:"
-echo "  cat ~/edid_kiosk.log"
+echo "Setup complete. Reboot recommended."
