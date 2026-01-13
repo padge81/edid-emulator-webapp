@@ -1,250 +1,150 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>EDID Emulator</title>
-    <style>
-		#writeSelect {max-height: 20px; overflow-y: auto; display: block;}
-        body { font-family: Arial; max-width: 960px; margin: auto; }
-        textarea { width: 90%; height: 200px; }
-        button, select, input { margin: 5px 5px 5px 0; }
-        pre { background: #111; color: #0f0; padding: 10px; overflow-x: auto; }
-        .space-around { padding-left: 20px; }
-        .status { padding: 8px; font-weight: bold; border-radius: 4px; }
-        .idle { background: #eee; }
-        .working { background: #ffeaa7; }
-        .success { background: #55efc4; }
-        .warning { background: #fab1a0; }
-        .error { background: #ff7675; }
-        .container { padding: 0 30px; }
-    </style>
+<meta charset="utf-8">
+<title>EDID Emulator</title>
+<style>
+body { font-family: Arial; background:#111; color:#eee; padding:20px; }
+button { font-size:18px; padding:14px; margin:8px; }
+.status { padding:10px; margin-top:10px; border-radius:5px; }
+.ok { background:#2e7d32; }
+.warn { background:#f9a825; }
+.err { background:#c62828; }
+.modal {
+  position:fixed; inset:0; background:rgba(0,0,0,.8);
+  display:none; align-items:center; justify-content:center;
+}
+.modal > div {
+  background:#222; padding:20px; max-width:600px; width:90%;
+}
+table { width:100%; border-collapse:collapse; }
+td,th { padding:6px; border-bottom:1px solid #444; }
+</style>
 </head>
+
 <body>
 
-<div style="display:flex; justify-content:space-between;">
-    <div>Version: <b id="version">loading…</b></div>
+<h1>EDID Emulator</h1>
+
+<button onclick="openImport()">Import from USB</button>
+<button onclick="openExport()">Export to USB</button>
+<button onclick="shutdown()">Shutdown</button>
+
+<div id="status" class="status ok">Ready</div>
+
+<!-- USB Modal -->
+<div id="usbModal" class="modal">
+  <div>
+    <h3>Select USB</h3>
+    <select id="usbSelect" style="width:100%;font-size:18px"></select>
+    <br><br>
+    <button onclick="confirmUSB()">Continue</button>
+    <button onclick="closeModal()">Cancel</button>
+  </div>
 </div>
 
-<div class="space-around">
-    <button onclick="updateRepo()">Update</button>
+<!-- Import Preview -->
+<div id="previewModal" class="modal">
+  <div>
+    <h3>Import Preview</h3>
+    <table id="previewTable"></table>
+    <br>
+    <button onclick="doImport()">Import Selected</button>
+    <button onclick="closeModal()">Cancel</button>
+  </div>
 </div>
 
-<hr>
-
-<div class="space-around">
-<h2>EDID Emulator</h2>
-
-<label>I²C Port:</label>
-<select id="portSelect">
-    {% for p in ports %}
-        <option value="{{ p }}" {% if p == default_port %}selected{% endif %}>{{ p }}</option>
-    {% endfor %}
-</select>
-</div>
-
-<hr>
-
-<div class="container">
-    <button onclick="readEdid()">Read EDID</button>
-    <button onclick="resetEdid()">Reset</button>
-    <button id="toggleView" onclick="toggleView()" disabled>View: Binary</button>
-</div>
-
-<div class="space-around">
-    <p>Match: <b id="matchResult">—</b></p>
-</div>
-
-<div class="container">
-    <textarea id="preview" readonly></textarea>
-</div>
-
-<div class="space-around">
-<h3>Save New EDID</h3>
-<input id="saveName" placeholder="filename.bin" disabled>
-<button id="saveBtn" onclick="saveEdid()" disabled>Save</button>
-
-<h3>Write EDID</h3>
-<select id="writeSelect">
-    <option value="">-- select --</option>
-    {% for f in files %}
-        <option value="{{ f }}">{{ f }}</option>
-    {% endfor %}
-</select>
-<button onclick="confirmWrite()">Write</button>
-
-<h3>Status</h3>
-</div>
-
-<div id="status" class="status idle">Idle</div>
-
-<div id="diffBlock" style="display:none;">
-    <h3>Verification Diff</h3>
-    <pre id="diff"></pre>
-</div>
-<button style="background:#c0392b;color:white"
-        onclick="confirmShutdown()">
-    Shutdown Pi
-</button>
 <script>
-const el = {};
+const el = {
+  status: document.getElementById("status"),
+  usbModal: document.getElementById("usbModal"),
+  previewModal: document.getElementById("previewModal"),
+  usbSelect: document.getElementById("usbSelect"),
+  previewTable: document.getElementById("previewTable")
+};
 
-window.addEventListener("DOMContentLoaded", () => {
-    el.status = document.getElementById("status");
-    el.preview = document.getElementById("preview");
-    el.matchResult = document.getElementById("matchResult");
-    el.toggleView = document.getElementById("toggleView");
-    el.saveBtn = document.getElementById("saveBtn");
-    el.saveName = document.getElementById("saveName");
-    el.writeSelect = document.getElementById("writeSelect");
-    el.portSelect = document.getElementById("portSelect");
-    el.diffBlock = document.getElementById("diffBlock");
-    el.diff = document.getElementById("diff");
-    el.version = document.getElementById("version");
+let mode = "";
+let usbPath = "";
+let previewData = [];
 
-    loadVersion();
-});
-
-let binaryB64 = "";
-let decoded = "";
-let view = "binary";
-
-function setStatus(msg, cls) {
-    if (!el.status) return;
-    el.status.textContent = msg;
-    el.status.className = "status " + cls;
+function setStatus(msg, cls="ok") {
+  el.status.textContent = msg;
+  el.status.className = "status " + cls;
 }
 
-function loadVersion() {
-    fetch("/version")
-        .then(r => r.json())
-        .then(d => el.version.textContent = d.version);
+function closeModal() {
+  el.usbModal.style.display = "none";
+  el.previewModal.style.display = "none";
 }
 
-function updateRepo() {
-    if (!confirm("Update from GitHub?")) return;
-    setStatus("Updating…", "working");
-
-    fetch("/update_repo", { method: "POST" })
-        .then(r => r.json())
-        .then(d => {
-            setStatus(d.error ? "Update failed" : "Updated ✔", d.error ? "error" : "success");
-            loadVersion();
-        });
+async function openImport() {
+  mode = "import";
+  await showUSBs();
 }
 
-function readEdid() {
-    el.diffBlock.style.display = "none";
-    setStatus("Reading EDID…", "working");
-
-    fetch(`/read_and_compare_edid?port=${el.portSelect.value}`)
-        .then(r => r.json())
-        .then(d => {
-            if (d.error) return setStatus(d.error, "error");
-
-            binaryB64 = d.binary_b64;
-            decoded = d.decoded;
-
-            el.matchResult.textContent = d.match;
-            el.toggleView.disabled = false;
-
-            el.saveBtn.disabled = d.match !== "UNKNOWN";
-            el.saveName.disabled = d.match !== "UNKNOWN";
-
-            setBinaryView();
-            setStatus("Read complete ✔", "success");
-        });
+async function openExport() {
+  mode = "export";
+  await showUSBs();
 }
 
-function toggleView() {
-    view === "binary" ? setDecodedView() : setBinaryView();
+async function showUSBs() {
+  const res = await fetch("/usb");
+  const list = await res.json();
+  el.usbSelect.innerHTML = list.map(p => `<option>${p}</option>`).join("");
+  el.usbModal.style.display = "flex";
 }
 
-function setBinaryView() {
-    view = "binary";
-    el.toggleView.textContent = "View: Binary";
+async function confirmUSB() {
+  usbPath = el.usbSelect.value;
+  closeModal();
 
-    const bin = atob(binaryB64);
-    let out = "";
-    for (let i = 0; i < bin.length; i++) {
-        out += bin.charCodeAt(i).toString(16).padStart(2, "0") + " ";
-        if ((i + 1) % 16 === 0) out += "\n";
-    }
-    el.preview.value = out;
+  if (mode === "import") {
+    const res = await fetch(`/usb_scan?path=${encodeURIComponent(usbPath)}`);
+    previewData = await res.json();
+
+    el.previewTable.innerHTML =
+      "<tr><th>Name</th><th>Status</th></tr>" +
+      previewData.map(f =>
+        `<tr><td>${f.name}</td><td>${f.status}</td></tr>`
+      ).join("");
+
+    el.previewModal.style.display = "flex";
+  } else {
+    doExport();
+  }
 }
 
-function setDecodedView() {
-    view = "decoded";
-    el.toggleView.textContent = "View: Decoded";
-    el.preview.value = decoded;
+async function doImport() {
+  closeModal();
+  setStatus("Importing...", "warn");
+
+  const files = previewData.filter(f => f.status === "new").map(f => f.name);
+
+  const res = await fetch("/usb_import", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({path:usbPath, files})
+  });
+
+  const d = await res.json();
+  setStatus(`Imported ${d.imported.length}, skipped ${d.skipped.length}`, "ok");
 }
 
-function saveEdid() {
-    fetch("/save_edid", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-            filename: el.saveName.value,
-            binary: binaryB64
-        })
-    }).then(() => setStatus("Saved ✔", "success"));
+async function doExport() {
+  setStatus("Exporting...", "warn");
+  const res = await fetch("/usb_export", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({path:usbPath})
+  });
+  const d = await res.json();
+  setStatus(`Exported ${d.exported.length}, skipped ${d.skipped.length}`, "ok");
 }
 
-function confirmWrite() {
-    const f = el.writeSelect.value;
-    if (!f) return alert("Select EDID");
-    if (!confirm(`Write EDID '${f}' to port ${el.portSelect.value}?`)) return;
-    writeEdid();
-}
-
-function writeEdid() {
-    el.diffBlock.style.display = "none";
-    setStatus("Writing EDID…", "working");
-
-    fetch("/write_edid", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-            filename: el.writeSelect.value,
-            port: el.portSelect.value
-        })
-    })
-    .then(r => r.json())
-    .then(d => {
-        if (d.error) return setStatus(d.error, "error");
-
-        if (d.verified) {
-            setStatus("Write + Verify ✔", "success");
-            readEdid(); // auto refresh
-        } else {
-            setStatus("Verify FAILED", "warning");
-            el.diff.textContent = d.diff || "";
-            el.diffBlock.style.display = "block";
-        }
-    });
-}
-
-function resetEdid() {
-    el.preview.value = "";
-    el.matchResult.textContent = "—";
-    el.toggleView.disabled = true;
-    el.saveBtn.disabled = true;
-    el.saveName.disabled = true;
-    el.diffBlock.style.display = "none";
-    setStatus("Idle", "idle");
-}
-function confirmShutdown() {
-    if (!confirm("⚠️ This will safely power off the Raspberry Pi.\n\nContinue?")) {
-        return;
-    }
-
-    setStatus("Shutting down…", "working");
-
-    fetch("/shutdown", { method: "POST" })
-        .then(() => {
-            setStatus("Powering off…", "success");
-        })
-        .catch(() => {
-            setStatus("Shutdown failed", "error");
-        });
+async function shutdown() {
+  if (!confirm("Shutdown system?")) return;
+  setStatus("Shutting down...", "warn");
+  await fetch("/shutdown", {method:"POST"});
 }
 </script>
 
