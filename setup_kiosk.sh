@@ -7,12 +7,11 @@ SERVICE_DIR="$HOME/.config/systemd/user"
 
 echo "=== EDID Emulator Kiosk Setup ==="
 
-# Ensure directories exist
 mkdir -p "$SERVICE_DIR"
 
-# -------------------------------
+# -------------------------------------------------
 # Create kiosk startup script
-# -------------------------------
+# -------------------------------------------------
 echo "Creating start_edid_ui.sh..."
 
 cat > "$APP_DIR/start_edid_ui.sh" <<'EOF'
@@ -32,7 +31,9 @@ export XAUTHORITY="$HOME/.Xauthority"
 echo "DISPLAY=$DISPLAY"
 echo "XAUTHORITY=$XAUTHORITY"
 
-# Wait for X to be fully ready
+# -------------------------------------------------
+# Wait for X session
+# -------------------------------------------------
 for i in {1..30}; do
     if xset q >/dev/null 2>&1; then
         echo "X is ready"
@@ -42,10 +43,14 @@ for i in {1..30}; do
     sleep 1
 done
 
+# -------------------------------------------------
 # Rotate display to portrait
+# -------------------------------------------------
 xrandr --output DSI-1 --rotate right || echo "xrandr rotate failed"
 
+# -------------------------------------------------
 # Map FT5x06 touchscreen to DSI-1
+# -------------------------------------------------
 TOUCH_ID=$(xinput list | grep -i 'ft5x06' | grep -o 'id=[0-9]*' | cut -d= -f2)
 if [ -n "$TOUCH_ID" ]; then
     echo "Mapping touchscreen ID $TOUCH_ID to DSI-1"
@@ -54,7 +59,9 @@ else
     echo "Touchscreen device not found"
 fi
 
+# -------------------------------------------------
 # Start Flask backend
+# -------------------------------------------------
 cd "$BACKEND_DIR" || exit 1
 [ -f venv/bin/activate ] && source venv/bin/activate
 
@@ -69,9 +76,11 @@ for i in {1..30}; do
     sleep 1
 done
 
-# Launch Epiphany in kiosk mode
+# -------------------------------------------------
+# Launch Epiphany in kiosk (app) mode
+# -------------------------------------------------
 echo "Launching Epiphany..."
-epiphany --application-mode "$URL" &
+epiphany --application-id=edid-emulator "$URL" &
 
 echo "Kiosk startup complete"
 wait
@@ -79,9 +88,9 @@ EOF
 
 chmod +x "$APP_DIR/start_edid_ui.sh"
 
-# -------------------------------
+# -------------------------------------------------
 # Create systemd user service
-# -------------------------------
+# -------------------------------------------------
 echo "Creating systemd user service..."
 
 cat > "$SERVICE_DIR/edid-emulator.service" <<EOF
@@ -99,39 +108,4 @@ Environment=XAUTHORITY=$HOME/.Xauthority
 
 [Install]
 WantedBy=default.target
-EOF
-
-# -------------------------------
-# Enable service
-# -------------------------------
-echo "Enabling systemd service..."
-systemctl --user daemon-reload
-systemctl --user enable edid-emulator.service
-
-# -------------------------------
-# Create desktop launcher
-# -------------------------------
-echo "Creating desktop icon..."
-
-mkdir -p "$HOME/Desktop"
-
-cat > "$HOME/Desktop/EDID-Emulator.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=EDID Emulator
-Exec=$APP_DIR/start_edid_ui.sh
-Icon=utilities-terminal
-Terminal=false
-Categories=Utility;
-EOF
-
-chmod +x "$HOME/Desktop/EDID-Emulator.desktop"
-
-echo
-echo "=== Setup complete ==="
-echo
-echo "Reboot to test kiosk startup:"
-echo "  sudo reboot"
-echo
-echo "Log file (if needed):"
-echo "  cat ~/edid_kiosk.log"
+E
