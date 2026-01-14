@@ -2,27 +2,27 @@
 Web-based EDID emulator management for Raspberry Pi
 
 
-# Install
+# 🚀 Install
 
-## Update OS
+## 🔄 Update OS
 ```
 sudo apt-get update
 sudo apt-get upgrade
 sudo reboot
 ```
 
-## Install Dependencies:
+## 📦 Install Dependencies:
 ```
 sudo apt-get install git python3 python3-smbus edid-decode
 sudo reboot
 ```
 
-## Download EDID Manager:
+## ⬇️ Download edid-emulator-webapp:
 ```
 git clone https://github.com/padge81/edid-emulator-webapp.git
 ```
 
-## Run Setup:
+## ⚙️ Run Setup:
 ```
 cd edid-emulator-webapp
 chmod +x setup_kiosk.sh
