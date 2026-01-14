@@ -63,7 +63,7 @@ done
 
 # Launch browser
 echo "Launching Chromium..."
-chromium-browser --kiosk --start-fullscreen --start-maximized --disable-infobars --no-first-run --disable-session-crashed-bubble --window-size=800,480 --force-device-scale-factor=1 "$URL" &
+chromium-browser --kiosk --start-fullscreen --disable-infobars --no-first-run --disable-session-crashed-bubble --force-device-scale-factor=1 "$URL" &
 
 echo "Kiosk startup complete"
 wait
