@@ -5,37 +5,38 @@ APP_DIR="$HOME/edid-emulator-webapp"
 BACKEND_DIR="$APP_DIR/backend"
 SERVICE_DIR="$HOME/.config/systemd/user"
 DESKTOP_DIR="$HOME/Desktop"
+DESKTOP_FILE="$DESKTOP_DIR/EDID_Emulator_Kiosk.desktop"
 
-KIOSK_SCRIPT="$APP_DIR/start_edid_kiosk.sh"
-DESKTOP_ICON="$DESKTOP_DIR/EDID_Emulator.desktop"
+echo "=== EDID Emulator Chrome Kiosk Setup ==="
 
-URL="http://127.0.0.1:5000"
-DISPLAY_NAME="DSI-1"
-
-echo "=== EDID Emulator Chromium Kiosk Setup ==="
-
-# ------------------------------------------------------------
-# Packages
-# ------------------------------------------------------------
+# ----------------------------
+# Install required packages
+# ----------------------------
 sudo apt update
 sudo apt install -y \
     chromium-browser \
     unclutter \
-    xinput \
-    x11-xserver-utils \
+    wmctrl \
+    xdotool \
     curl
 
-# Optional cleanup of Epiphany stack
-sudo apt purge -y epiphany-browser wmctrl xdotool || true
-sudo apt autoremove -y
+# ----------------------------
+# Remove old desktop icon
+# ----------------------------
+if [ -f "$DESKTOP_FILE" ]; then
+    echo "Removing existing desktop icon"
+    rm -f "$DESKTOP_FILE"
+fi
 
+# ----------------------------
+# Create systemd user service dir
+# ----------------------------
 mkdir -p "$SERVICE_DIR"
-mkdir -p "$DESKTOP_DIR"
 
-# ------------------------------------------------------------
-# Kiosk start script
-# ------------------------------------------------------------
-cat > "$KIOSK_SCRIPT" <<'EOF'
+# ----------------------------
+# Create kiosk startup script
+# ----------------------------
+cat > "$APP_DIR/start_edid_kiosk.sh" <<'EOF'
 #!/bin/bash
 
 LOG="$HOME/edid_kiosk.log"
@@ -49,52 +50,73 @@ URL="http://127.0.0.1:5000"
 export DISPLAY=:0
 export XAUTHORITY="$HOME/.Xauthority"
 
-# ------------------------------------------------------------
-# Wait for X server
-# ------------------------------------------------------------
-for i in {1..30}; do
+echo "DISPLAY=$DISPLAY"
+echo "XAUTHORITY=$XAUTHORITY"
+
+# ----------------------------
+# Wait for X to be ready
+# ----------------------------
+for i in {1..40}; do
     if xset q >/dev/null 2>&1; then
-        echo "X server ready"
+        echo "X is ready"
         break
     fi
+    echo "Waiting for X..."
     sleep 1
 done
 
-# ------------------------------------------------------------
-# Rotate screen
-# ------------------------------------------------------------
-xrandr --output DSI-1 --rotate right || echo "Rotation skipped"
+# ----------------------------
+# Rotate display (DSI touchscreen)
+# ----------------------------
+xrandr --output DSI-1 --rotate right || echo "Display rotation skipped"
 
-# ------------------------------------------------------------
-# Rotate touchscreen
-# ------------------------------------------------------------
-TOUCH_ID=$(xinput list --id-only "FT5406 memory based driver" 2>/dev/null || true)
-if [ -n "$TOUCH_ID" ]; then
-    echo "Mapping touchscreen ID $TOUCH_ID"
-    xinput map-to-output "$TOUCH_ID" DSI-1
+# ----------------------------
+# Touchscreen rotation fix (FT5x06)
+# ----------------------------
+TOUCH_NAME=$(xinput list --name-only | grep -i 'ft5x06\|ft5406' | head -n1)
+
+if [ -n "$TOUCH_NAME" ]; then
+    echo "Applying touch rotation matrix to: $TOUCH_NAME"
+    xinput set-prop "$TOUCH_NAME" \
+        "Coordinate Transformation Matrix" \
+        0 1 0 \
+       -1 0 1 \
+        0 0 1
+else
+    echo "Touchscreen device not found"
 fi
 
-# ------------------------------------------------------------
-# Hide cursor (touchscreen friendly)
-# ------------------------------------------------------------
+# ----------------------------
+# Hide mouse cursor
+# ----------------------------
 unclutter -idle 0 &
 
-# ------------------------------------------------------------
+# ----------------------------
 # Start Flask backend
-# ------------------------------------------------------------
+# ----------------------------
 cd "$BACKEND_DIR" || exit 1
 [ -f venv/bin/activate ] && source venv/bin/activate
+
+echo "Starting Flask backend..."
 python3 app.py &
 
 # Wait for Flask
-for i in {1..30}; do
+for i in {1..40}; do
     curl -s "$URL" >/dev/null && break
+    echo "Waiting for Flask..."
     sleep 1
 done
 
-# ------------------------------------------------------------
+# ----------------------------
+# Kill any existing Chromium
+# ----------------------------
+pkill -f chromium || true
+sleep 1
+
+# ----------------------------
 # Launch Chromium in kiosk mode
-# ------------------------------------------------------------
+# ----------------------------
+echo "Launching Chromium kiosk..."
 chromium-browser \
     --kiosk \
     --noerrdialogs \
@@ -102,26 +124,27 @@ chromium-browser \
     --disable-session-crashed-bubble \
     --disable-translate \
     --disable-features=TranslateUI \
-    --overscroll-history-navigation=0 \
+    --check-for-update-interval=31536000 \
     "$URL" &
 
+echo "Kiosk startup complete"
 wait
 EOF
 
-chmod +x "$KIOSK_SCRIPT"
+chmod +x "$APP_DIR/start_edid_kiosk.sh"
 
-# ------------------------------------------------------------
-# systemd user service
-# ------------------------------------------------------------
+# ----------------------------
+# Create systemd user service
+# ----------------------------
 cat > "$SERVICE_DIR/edid-emulator.service" <<EOF
 [Unit]
-Description=EDID Emulator Chromium Kiosk
+Description=EDID Emulator Chrome Kiosk
 After=graphical-session.target
 Wants=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=$KIOSK_SCRIPT
+ExecStart=$APP_DIR/start_edid_kiosk.sh
 Restart=on-failure
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=%h/.Xauthority
@@ -130,36 +153,30 @@ Environment=XAUTHORITY=%h/.Xauthority
 WantedBy=default.target
 EOF
 
+# ----------------------------
+# Enable service
+# ----------------------------
 systemctl --user daemon-reload
 systemctl --user enable edid-emulator.service
 
-# ------------------------------------------------------------
-# Desktop launcher icon
-# ------------------------------------------------------------
-cat > "$DESKTOP_ICON" <<EOF
+# ----------------------------
+# Create desktop launcher
+# ----------------------------
+cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
-Name=EDID Emulator
+Name=EDID Emulator Kiosk
 Comment=Launch EDID Emulator Kiosk
-Exec=$KIOSK_SCRIPT
+Exec=$APP_DIR/start_edid_kiosk.sh
 Icon=utilities-terminal
 Terminal=false
 Type=Application
 Categories=Utility;
 EOF
 
-chmod +x "$DESKTOP_ICON"
+chmod +x "$DESKTOP_FILE"
 
-# ------------------------------------------------------------
-# Allow desktop icon execution
-# ------------------------------------------------------------
-gio set "$DESKTOP_ICON" metadata::trusted true || true
-
-echo "=========================================="
-echo " Setup complete."
-echo " - Chromium kiosk enabled on login"
-echo " - Screen + touch rotated"
-echo " - Cursor hidden"
-echo " - Desktop icon created"
-echo
-echo " Reboot recommended."
-echo "=========================================="
+echo "======================================"
+echo " Setup complete ✔"
+echo " Reboot recommended"
+echo " Desktop icon created: EDID Emulator Kiosk"
+echo "======================================"
