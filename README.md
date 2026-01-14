@@ -13,7 +13,7 @@ sudo reboot
 
 ## 📦 Install Dependencies:
 ```
-sudo apt-get install git python3 python3-smbus edid-decode
+sudo apt-get install git python3 python3-smbus edid-decode epiphany-browser
 sudo reboot
 ```
 
