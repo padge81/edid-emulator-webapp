@@ -128,8 +128,14 @@ def read_and_compare_edid():
 @app.route("/save_edid", methods=["POST"])
 def save_edid():
     data = request.json
-    name = data.get("filename")
+    name = data.get("filename", "").strip()
     binary_b64 = data.get("binary")
+
+    if not name:
+        return jsonify({"error": "Filename required"}), 400
+
+    if not name.lower().endswith(".bin"):
+        name += ".bin"
 
     path = os.path.join(SAVE_DIR, name)
     if os.path.exists(path):
@@ -138,7 +144,8 @@ def save_edid():
     with open(path, "wb") as f:
         f.write(base64.b64decode(binary_b64))
 
-    return jsonify({"saved": True})
+    return jsonify({"saved": True, "filename": name})
+
 
 @app.route("/write_edid", methods=["POST"])
 def write_edid():

@@ -4,15 +4,38 @@ set -e
 APP_DIR="$HOME/edid-emulator-webapp"
 BACKEND_DIR="$APP_DIR/backend"
 SERVICE_DIR="$HOME/.config/systemd/user"
+DESKTOP_DIR="$HOME/Desktop"
 
-echo "=== EDID Emulator Kiosk Setup ==="
+KIOSK_SCRIPT="$APP_DIR/start_edid_kiosk.sh"
+DESKTOP_ICON="$DESKTOP_DIR/EDID_Emulator.desktop"
 
+URL="http://127.0.0.1:5000"
+DISPLAY_NAME="DSI-1"
+
+echo "=== EDID Emulator Chromium Kiosk Setup ==="
+
+# ------------------------------------------------------------
+# Packages
+# ------------------------------------------------------------
 sudo apt update
-sudo apt install -y wmctrl xdotool curl
+sudo apt install -y \
+    chromium-browser \
+    unclutter \
+    xinput \
+    x11-xserver-utils \
+    curl
+
+# Optional cleanup of Epiphany stack
+sudo apt purge -y epiphany-browser wmctrl xdotool || true
+sudo apt autoremove -y
 
 mkdir -p "$SERVICE_DIR"
+mkdir -p "$DESKTOP_DIR"
 
-cat > "$APP_DIR/start_edid_ui.sh" <<'EOF'
+# ------------------------------------------------------------
+# Kiosk start script
+# ------------------------------------------------------------
+cat > "$KIOSK_SCRIPT" <<'EOF'
 #!/bin/bash
 
 LOG="$HOME/edid_kiosk.log"
@@ -26,77 +49,82 @@ URL="http://127.0.0.1:5000"
 export DISPLAY=:0
 export XAUTHORITY="$HOME/.Xauthority"
 
-echo "DISPLAY=$DISPLAY"
-echo "XAUTHORITY=$XAUTHORITY"
-
-# Wait for X
+# ------------------------------------------------------------
+# Wait for X server
+# ------------------------------------------------------------
 for i in {1..30}; do
     if xset q >/dev/null 2>&1; then
-        echo "X is ready"
+        echo "X server ready"
         break
     fi
-    echo "Waiting for X..."
     sleep 1
 done
 
-# Rotate display
+# ------------------------------------------------------------
+# Rotate screen
+# ------------------------------------------------------------
 xrandr --output DSI-1 --rotate right || echo "Rotation skipped"
 
-# Map touchscreen
-TOUCH_ID=$(xinput list | grep -i 'ft5x06' | grep -o 'id=[0-9]*' | cut -d= -f2)
+# ------------------------------------------------------------
+# Rotate touchscreen
+# ------------------------------------------------------------
+TOUCH_ID=$(xinput list --id-only "FT5406 memory based driver" 2>/dev/null || true)
 if [ -n "$TOUCH_ID" ]; then
     echo "Mapping touchscreen ID $TOUCH_ID"
     xinput map-to-output "$TOUCH_ID" DSI-1
 fi
 
-# Start Flask
+# ------------------------------------------------------------
+# Hide cursor (touchscreen friendly)
+# ------------------------------------------------------------
+unclutter -idle 0 &
+
+# ------------------------------------------------------------
+# Start Flask backend
+# ------------------------------------------------------------
 cd "$BACKEND_DIR" || exit 1
 [ -f venv/bin/activate ] && source venv/bin/activate
-echo "Starting Flask..."
 python3 app.py &
 
+# Wait for Flask
 for i in {1..30}; do
     curl -s "$URL" >/dev/null && break
-    echo "Waiting for Flask..."
     sleep 1
 done
 
-# Launch browser
-echo "Launching Epiphany..."
-epiphany "$URL" &
+# ------------------------------------------------------------
+# Launch Chromium in kiosk mode
+# ------------------------------------------------------------
+chromium-browser \
+    --kiosk \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-session-crashed-bubble \
+    --disable-translate \
+    --disable-features=TranslateUI \
+    --overscroll-history-navigation=0 \
+    "$URL" &
 
-# Fullscreen Epiphany (ROBUST)
-echo "Waiting for Epiphany window (by class)..."
-for i in {1..400}; do
-    WIN_ID=$(xdotool search --onlyvisible --class epiphany 2>/dev/null | head -n 1)
-    if [ -n "$WIN_ID" ]; then
-        echo "Epiphany window detected: $WIN_ID"
-        xdotool windowactivate "$WIN_ID"
-        sleep 0.4
-        xdotool key F11
-        break
-    fi
-    sleep 0.5
-done
-
-echo "Kiosk startup complete"
 wait
 EOF
 
-chmod +x "$APP_DIR/start_edid_ui.sh"
+chmod +x "$KIOSK_SCRIPT"
 
+# ------------------------------------------------------------
+# systemd user service
+# ------------------------------------------------------------
 cat > "$SERVICE_DIR/edid-emulator.service" <<EOF
 [Unit]
-Description=EDID Emulator Kiosk
+Description=EDID Emulator Chromium Kiosk
 After=graphical-session.target
 Wants=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=$APP_DIR/start_edid_ui.sh
+ExecStart=$KIOSK_SCRIPT
 Restart=on-failure
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=$HOME/.Xauthority
+Environment=XAUTHORITY=%h/.Xauthority
 
 [Install]
 WantedBy=default.target
@@ -105,4 +133,33 @@ EOF
 systemctl --user daemon-reload
 systemctl --user enable edid-emulator.service
 
-echo "Setup complete. Reboot recommended."
+# ------------------------------------------------------------
+# Desktop launcher icon
+# ------------------------------------------------------------
+cat > "$DESKTOP_ICON" <<EOF
+[Desktop Entry]
+Name=EDID Emulator
+Comment=Launch EDID Emulator Kiosk
+Exec=$KIOSK_SCRIPT
+Icon=utilities-terminal
+Terminal=false
+Type=Application
+Categories=Utility;
+EOF
+
+chmod +x "$DESKTOP_ICON"
+
+# ------------------------------------------------------------
+# Allow desktop icon execution
+# ------------------------------------------------------------
+gio set "$DESKTOP_ICON" metadata::trusted true || true
+
+echo "=========================================="
+echo " Setup complete."
+echo " - Chromium kiosk enabled on login"
+echo " - Screen + touch rotated"
+echo " - Cursor hidden"
+echo " - Desktop icon created"
+echo
+echo " Reboot recommended."
+echo "=========================================="
