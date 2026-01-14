@@ -119,6 +119,7 @@ sleep 1
 echo "Launching Chromium kiosk..."
 chromium-browser \
     --kiosk \
+	--password-store=basic \
     --noerrdialogs \
     --disable-infobars \
     --disable-session-crashed-bubble \
