@@ -8,7 +8,7 @@ SERVICE_DIR="$HOME/.config/systemd/user"
 echo "=== EDID Emulator Kiosk Setup ==="
 
 sudo apt update
-sudo apt install -y wmctrl xdotool curl
+sudo apt install -y wmctrl xdotool curl chromium-browser
 
 mkdir -p "$SERVICE_DIR"
 
@@ -62,15 +62,15 @@ for i in {1..30}; do
 done
 
 # Launch browser
-echo "Launching Epiphany..."
-epiphany "$URL" &
+echo "Launching Chromium..."
+chromium-browser --kiosk --start-fullscreen --window-size=800,480 --force-device-scale-factor=1 "$URL" &
 
-# Fullscreen Epiphany (ROBUST)
-echo "Waiting for Epiphany window (by class)..."
+# Fullscreen Chromium (ROBUST)
+echo "Waiting for Chromium window (by class)..."
 for i in {1..400}; do
-    WIN_ID=$(xdotool search --onlyvisible --class epiphany 2>/dev/null | head -n 1)
+    WIN_ID=$(xdotool search --onlyvisible --class chromium 2>/dev/null | head -n 1)
     if [ -n "$WIN_ID" ]; then
-        echo "Epiphany window detected: $WIN_ID"
+        echo "Chromium window detected: $WIN_ID"
         xdotool windowactivate "$WIN_ID"
         sleep 0.4
         xdotool key F11
