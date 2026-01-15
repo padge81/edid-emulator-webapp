@@ -1,50 +1,36 @@
 #!/bin/bash
 set -e
 
-echo "=== Enabling Bluetooth PAN (Headless / Always Discoverable) ==="
+echo "=== Enabling HEADLESS Bluetooth PAN (No PIN / No Code) ==="
 
-# -------------------------------
-# Packages
-# -------------------------------
+# ---- Packages ----
 sudo apt update
-sudo apt install -y \
-    bluetooth \
-    bluez \
-    bluez-tools \
-    bridge-utils \
-    dnsmasq
+sudo apt install -y bluetooth bluez bluez-tools bridge-utils dnsmasq
 
-# -------------------------------
-# Enable Bluetooth service
-# -------------------------------
+# ---- Enable Bluetooth ----
 sudo systemctl enable bluetooth
 sudo systemctl start bluetooth
 
-# -------------------------------
-# Configure BlueZ (headless + PAN)
-# -------------------------------
+# ---- BlueZ main config ----
 CONF="/etc/bluetooth/main.conf"
 
+sudo sed -i 's/^#*ControllerMode.*/ControllerMode = dual/' "$CONF"
 sudo sed -i 's/^#*EnableNetwork.*/EnableNetwork = true/' "$CONF"
 sudo sed -i 's/^#*DiscoverableTimeout.*/DiscoverableTimeout = 0/' "$CONF"
+sudo sed -i 's/^#*PairableTimeout.*/PairableTimeout = 0/' "$CONF"
 sudo sed -i 's/^#*AutoEnable.*/AutoEnable = true/' "$CONF"
 
-# Ensure ControllerMode exists and is dual
-if ! grep -q "^ControllerMode" "$CONF"; then
-    echo "ControllerMode = dual" | sudo tee -a "$CONF"
-else
-    sudo sed -i 's/^ControllerMode.*/ControllerMode = dual/' "$CONF"
-fi
+# ---- Bluetooth daemon override: NoInputNoOutput ----
+sudo mkdir -p /etc/systemd/system/bluetooth.service.d
 
-# Restart bluetooth to apply config
-sudo systemctl restart bluetooth
+sudo tee /etc/systemd/system/bluetooth.service.d/override.conf > /dev/null <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/libexec/bluetooth/bluetoothd --noplugin=sap --experimental
+EOF
 
-# -------------------------------
-# Create systemd service for PAN
-# -------------------------------
-SERVICE="/etc/systemd/system/bt-pan.service"
-
-sudo tee "$SERVICE" > /dev/null <<'EOF'
+# ---- PAN systemd service ----
+sudo tee /etc/systemd/system/bt-pan.service > /dev/null <<'EOF'
 [Unit]
 Description=Bluetooth PAN (NAP)
 After=bluetooth.service
@@ -54,63 +40,76 @@ Requires=bluetooth.service
 Type=simple
 ExecStart=/usr/bin/bt-network -s nap
 Restart=always
-RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable bt-pan.service
-sudo systemctl restart bt-pan.service
-
-# -------------------------------
-# Network configuration (pan0)
-# -------------------------------
-sudo tee /etc/network/interfaces.d/bt-pan > /dev/null <<'EOF'
+# ---- Network interface ----
+sudo tee /etc/network/interfaces.d/pan0 > /dev/null <<'EOF'
 auto pan0
 iface pan0 inet static
     address 192.168.44.1
     netmask 255.255.255.0
 EOF
 
-# -------------------------------
-# DNS / DHCP for phone
-# -------------------------------
-DNSMASQ_CONF="/etc/dnsmasq.d/bt-pan.conf"
-
-sudo tee "$DNSMASQ_CONF" > /dev/null <<'EOF'
+# ---- DHCP (dnsmasq) ----
+sudo tee /etc/dnsmasq.d/bt-pan.conf > /dev/null <<'EOF'
 interface=pan0
 dhcp-range=192.168.44.10,192.168.44.50,255.255.255.0,12h
 EOF
 
-sudo systemctl restart dnsmasq
-
-# -------------------------------
-# Headless pairing + permanent discoverability
-# -------------------------------
-sudo bluetoothctl <<EOF
+# ---- Auto pairing & trust agent ----
+sudo tee /usr/local/bin/bt-auto-agent.sh > /dev/null <<'EOF'
+#!/bin/bash
+bluetoothctl <<EOT
 power on
 agent NoInputNoOutput
 default-agent
-pairable on
 discoverable on
+pairable on
+trust *
 exit
+EOT
 EOF
 
+sudo chmod +x /usr/local/bin/bt-auto-agent.sh
+
+# ---- Run agent at boot ----
+sudo tee /etc/systemd/system/bt-agent.service > /dev/null <<'EOF'
+[Unit]
+Description=Bluetooth Auto Pairing Agent
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bt-auto-agent.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---- Enable services ----
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+sudo systemctl restart bluetooth
+sudo systemctl enable bt-pan.service
+sudo systemctl enable bt-agent.service
+sudo systemctl restart dnsmasq
+sudo systemctl start bt-pan.service
+sudo systemctl start bt-agent.service
+
 echo
-echo "==========================================="
-echo " Bluetooth PAN ENABLED (HEADLESS MODE)"
+echo "=============================================="
+echo " HEADLESS BLUETOOTH PAN ENABLED"
 echo
-echo " ✔ Always discoverable"
-echo " ✔ No pairing confirmation required"
-echo " ✔ PAN / NAP enabled"
+echo " • No PIN / No confirmation required"
+echo " • Discoverable FOREVER"
+echo " • Auto-trusts all devices"
 echo
-echo " Pair your phone via Bluetooth"
-echo " Enable 'Network access / Internet sharing'"
-echo
-echo " Then open in browser:"
+echo " Connect phone → enable Bluetooth tethering"
+echo " Then open:"
 echo "   http://192.168.44.1:5000"
-echo
-echo " Works on Android & iOS"
-echo "==========================================="
+echo "=============================================="
