@@ -304,6 +304,15 @@ function resetEdid() {
     el.diff.textContent = "";
     setStatus("Idle", "idle");
 }
+function confirmShutdown() {
+    if (!confirm("Shutdown system?")) return;
+    fetch("/shutdown", { method: "POST" });
+}
+
+function confirmReboot() {
+    if (!confirm("Reboot system?")) return;
+    fetch("/reboot", { method: "POST" });
+-}
 </script>
 
 </body>
