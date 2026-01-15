@@ -1,136 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EDID Emulator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+    <style>
+        body {
+            background: #0b0b0b;
+            color: #e0e0e0;
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            padding: 10px;
+        }
+
+        h1, h2, h3 {
+            margin: 10px 0;
+        }
 
         button, select, input {
             font-size: 18px;
-            padding: 12px 16px;
             padding: 14px 18px;
-            margin: 6px 4px 6px 0;
+            margin: 6px 6px 6px 0;
             border-radius: 6px;
             border: none;
-            background: #34495e;
         }
 
-        .danger {
-            background: #c0392b;
+        button {
+            background: #1e1e1e;
+            color: #fff;
+            border: 2px solid #444;
         }
 
-        .danger:active {
-            background: #e74c3c;
-        }
-
-        .secondary {
-            background: #555;
+        button:active {
+            background: #333;
         }
 
         select, input {
             background: #111;
-            color: #f0f0f0;
+            color: #fff;
+            border: 2px solid #444;
+        }
+
+        textarea {
+            width: 100%;
+            height: 220px;
+            background: #000;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 14px;
+            border: 2px solid #333;
+            padding: 10px;
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .card {
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            background: #111;
         }
 
         .status {
-            padding: 10px;
-            padding: 12px;
             font-size: 18px;
-            font-weight: bold;
+            padding: 12px;
             border-radius: 6px;
-<hr>
+            margin-top: 8px;
+        }
 
-<!-- Port selection -->
-<div>
-    <label><strong>I²C Port:</strong></label><br>
-    <select id="portSelect" class="full">
+        .idle { background: #2c2c2c; }
+        .working { background: #7f6a00; }
+        .success { background: #006644; }
+        .warning { background: #664400; }
+        .error { background: #660000; }
+
+        .danger {
+            background: #8b0000;
+            border-color: #ff4444;
+        }
+
+        .power {
+            background: #111;
+            border: 2px solid #600;
+            color: #ff7777;
+        }
+
+        pre {
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+
+        label {
+            font-size: 18px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>EDID Emulator</h1>
+
+<div class="row">
+    <div>Version: <b id="version">loading…</b></div>
+    <button onclick="updateRepo()">Update</button>
+</div>
+
+<div class="card">
+    <h2>Target Port</h2>
+    <label>I²C Port:</label>
+    <select id="portSelect">
         {% for p in ports %}
             <option value="{{ p }}" {% if p == default_port %}selected{% endif %}>{{ p }}</option>
         {% endfor %}
     </select>
 </div>
-<label><strong>I²C Port:</strong></label>
-<select id="portSelect" class="full">
-    {% for p in ports %}
-        <option value="{{ p }}" {% if p == default_port %}selected{% endif %}>{{ p }}</option>
-    {% endfor %}
-</select>
 
-<hr>
+<div class="card">
+    <h2>EDID Operations</h2>
+    <div class="row">
+        <button onclick="readEdid()">Read EDID</button>
+        <button onclick="resetEdid()">Reset</button>
+        <button id="toggleView" onclick="toggleView()" disabled>View: Binary</button>
+    </div>
 
-<!-- Main controls -->
-<!-- EDID Controls -->
-<div class="row">
-    <button onclick="readEdid()">Read EDID</button>
-    <button onclick="resetEdid()">Reset</button>
-
-<hr>
-
-<!-- USB -->
-<h3>USB</h3>
-<div class="row">
-    <button class="secondary" onclick="usbImport()">USB Import</button>
-    <button class="secondary" onclick="usbExport()">USB Export</button>
+    <p>Match: <b id="matchResult">—</b></p>
+    <textarea id="preview" readonly></textarea>
 </div>
 
-<hr>
+<div class="card">
+    <h2>Save / Write</h2>
 
-<!-- System -->
-<h3>System</h3>
-<div class="row">
-    <button class="danger" onclick="rebootSystem()">Reboot</button>
-    <button class="danger" onclick="shutdownSystem()">Shutdown</button>
+    <div class="row">
+        <input id="saveName" placeholder="filename.bin" disabled>
+        <button id="saveBtn" onclick="saveEdid()" disabled>Save</button>
+    </div>
+
+    <div class="row">
+        <select id="writeSelect">
+            <option value="">-- select EDID --</option>
+            {% for f in files %}
+                <option value="{{ f }}">{{ f }}</option>
+            {% endfor %}
+        </select>
+        <button onclick="confirmWrite()">Write</button>
+    </div>
 </div>
 
-<hr>
+<div class="card">
+    <h2>USB Import / Export</h2>
 
-<!-- Status -->
-<h3>Status</h3>
-<div id="status" class="status idle">Idle</div>
+    <div class="row">
+        <button onclick="loadUsb()">Scan USB</button>
+    </div>
+
+    <div id="usbArea"></div>
+</div>
+
+<div class="card">
+    <h2>Status</h2>
+    <div id="status" class="status idle">Idle</div>
+</div>
+
+<div class="card">
+    <h2>Verification Diff</h2>
+    <pre id="diff"></pre>
+</div>
+
+<div class="card">
+    <h2>Power</h2>
+    <div class="row">
+        <button class="power" onclick="confirmReboot()">Reboot</button>
+        <button class="power danger" onclick="confirmShutdown()">Shutdown</button>
+    </div>
+</div>
+
+<script>
+const el = {};
+let binaryB64 = "";
+let decoded = "";
+let view = "binary";
+
+window.addEventListener("DOMContentLoaded", () => {
+    el.status = document.getElementById("status");
+    el.preview = document.getElementById("preview");
+    el.matchResult = document.getElementById("matchResult");
+    el.toggleView = document.getElementById("toggleView");
+    el.saveBtn = document.getElementById("saveBtn");
+    el.saveName = document.getElementById("saveName");
+    el.writeSelect = document.getElementById("writeSelect");
+    el.portSelect = document.getElementById("portSelect");
+    el.diff = document.getElementById("diff");
+    el.version = document.getElementById("version");
+    el.usbArea = document.getElementById("usbArea");
+
+    loadVersion();
+});
+
 function setStatus(msg, cls) {
+    el.status.textContent = msg;
     el.status.className = "status " + cls;
 }
 
-/* ---------- existing logic unchanged ---------- */
-
 function loadVersion() {
-    fetch("/version")
+    fetch("/version").then(r => r.json()).then(d => el.version.textContent = d.version);
+}
+
+function updateRepo() {
+    if (!confirm("Update from GitHub?")) return;
+    setStatus("Updating…", "working");
+    fetch("/update_repo", { method: "POST" })
+        .then(() => {
+            setStatus("Updated ✔", "success");
+            loadVersion();
+        });
+}
+
+function readEdid() {
+    setStatus("Reading EDID…", "working");
+    fetch(`/read_and_compare_edid?port=${el.portSelect.value}`)
         .then(r => r.json())
+        .then(d => {
+            binaryB64 = d.binary_b64;
+            decoded = d.decoded;
+            el.matchResult.textContent = d.match;
+            el.toggleView.disabled = false;
+            el.saveBtn.disabled = d.match !== "UNKNOWN";
+            el.saveName.disabled = d.match !== "UNKNOWN";
+            setBinaryView();
+            setStatus("Read complete ✔", "success");
+        });
+}
+
+function toggleView() {
+    view === "binary" ? setDecodedView() : setBinaryView();
+}
+
+function setBinaryView() {
+    view = "binary";
+    el.toggleView.textContent = "View: Binary";
+    const bin = atob(binaryB64);
+    let out = "";
+    for (let i = 0; i < bin.length; i++) {
+        out += bin.charCodeAt(i).toString(16).padStart(2, "0") + " ";
+        if ((i + 1) % 16 === 0) out += "\n";
+    }
+    el.preview.value = out;
+}
+
+function setDecodedView() {
+    view = "decoded";
+    el.toggleView.textContent = "View: Decoded";
+    el.preview.value = decoded;
+}
+
+function saveEdid() {
+    fetch("/save_edid", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            filename: el.saveName.value,
+            binary: binaryB64
+        })
+    }).then(() => setStatus("Saved ✔", "success"));
+}
+
+function confirmWrite() {
+    const f = el.writeSelect.value;
+    if (!f) return alert("Select EDID");
+    if (!confirm(`Write '${f}' to port ${el.portSelect.value}?`)) return;
+    writeEdid();
+}
+
+function writeEdid() {
+    setStatus("Writing EDID…", "working");
+    fetch("/write_edid", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            filename: el.writeSelect.value,
+            port: el.portSelect.value
+        })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.verified) {
+            setStatus("Write + Verify ✔", "success");
+        } else {
+            setStatus("Verify FAILED", "warning");
+            el.diff.textContent = d.diff || "";
+        }
+    });
+}
+
 function resetEdid() {
-    el.diffBlock.style.display = "none";
+    el.preview.value = "";
+    el.matchResult.textContent = "—";
+    el.toggleView.disabled = true;
+    el.saveBtn.disabled = true;
+    el.saveName.disabled = true;
+    el.diff.textContent = "";
     setStatus("Idle", "idle");
 }
 
-/* ---------- NEW USB + SYSTEM ---------- */
-
-function usbImport() {
-    if (!confirm("Import EDID files from USB?")) return;
-    setStatus("Importing from USB…", "working");
-
-    fetch("/usb/import", { method: "POST" })
+function loadUsb() {
+    el.usbArea.innerHTML = "";
+    fetch("/usb/status")
         .then(r => r.json())
-        .then(d => {
-            if (d.error) setStatus(d.error, "error");
-            else setStatus("USB Import complete ✔", "success");
+        .then(drives => {
+            drives.forEach(d => {
+                const div = document.createElement("div");
+                div.innerHTML = `
+                    <h3>${d.name}</h3>
+                    <button onclick="importUsb('${d.path}')">Import</button>
+                    ${d.read_only ? "" : `<button onclick="exportUsb('${d.path}')">Export</button>`}
+                `;
+                el.usbArea.appendChild(div);
+            });
         });
 }
 
-function usbExport() {
-    if (!confirm("Export EDID files to USB?")) return;
-    setStatus("Exporting to USB…", "working");
-
-    fetch("/usb/export", { method: "POST" })
+function importUsb(mount) {
+    fetch(`/usb/scan?mount=${mount}`)
         .then(r => r.json())
-        .then(d => {
-            if (d.error) setStatus(d.error, "error");
-            else setStatus("USB Export complete ✔", "success");
+        .then(files => {
+            const names = files.filter(f => !f.exists).map(f => f.name);
+            fetch("/usb/import", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ mount, files: names })
+            }).then(() => setStatus("Import complete ✔", "success"));
         });
 }
 
-function rebootSystem() {
-    if (!confirm("Reboot system?")) return;
-    fetch("/system/reboot", { method: "POST" });
+function exportUsb(mount) {
+    const files = Array.from(el.writeSelect.options).map(o => o.value).filter(Boolean);
+    fetch("/usb/export", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ mount, files })
+    }).then(() => setStatus("Export complete ✔", "success"));
 }
 
-function shutdownSystem() {
+function confirmShutdown() {
     if (!confirm("Shutdown system?")) return;
-    fetch("/system/shutdown", { method: "POST" });
+    fetch("/shutdown", { method: "POST" });
+}
+
+function confirmReboot() {
+    if (!confirm("Reboot system?")) return;
+    fetch("/reboot", { method: "POST" });
 }
 </script>
 
 </body>
+</html>
