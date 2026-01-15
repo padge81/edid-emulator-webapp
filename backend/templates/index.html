@@ -1,3 +1,133 @@
+@ -10,12 +10,10 @@
+            color: #e0e0e0;
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            padding: 10px;
+            padding: 10px 10px 90px 10px;
+        }
+
+        h1, h2, h3 {
+            margin: 10px 0;
+        }
+        h1, h2, h3 { margin: 10px 0; }
+
+        button, select, input {
+            font-size: 18px;
+@ -31,9 +29,7 @@
+            border: 2px solid #444;
+        }
+
+        button:active {
+            background: #333;
+        }
+        button:active { background: #333; }
+
+        select, input {
+            background: #111;
+@ -66,18 +62,48 @@
+            background: #111;
+        }
+
+        .status {
+        /* ===== FLOATING STATUS BAR ===== */
+        #statusBar {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            z-index: 9999;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+
+            font-size: 18px;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 8px;
+            padding: 14px;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.8);
+
+            pointer-events: none;
+            transition: opacity 0.3s ease, background 0.3s ease;
+        }
+
+        #spinner {
+            width: 22px;
+            height: 22px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top: 3px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .idle { background: #2c2c2c; }
+        .working { background: #7f6a00; }
+        .success { background: #006644; }
+        .warning { background: #664400; }
+        .error { background: #660000; }
+        .idle    { background: #2c2c2c; opacity: 0.35; }
+        .working { background: #7f6a00; opacity: 1; }
+        .success { background: #006644; opacity: 1; }
+        .warning { background: #664400; opacity: 1; }
+        .error   { background: #660000; opacity: 1; }
+
+        .danger {
+            background: #8b0000;
+@ -98,12 +124,10 @@
+            font-size: 13px;
+        }
+
+        label {
+            font-size: 18px;
+            margin-right: 10px;
+        }
+        label { font-size: 18px; margin-right: 10px; }
+    </style>
+</head>
+
+<body>
+
+<h1>EDID Emulator</h1>
+@ -156,19 +180,10 @@
+
+<div class="card">
+    <h2>USB Import / Export</h2>
+
+    <div class="row">
+        <button onclick="loadUsb()">Scan USB</button>
+    </div>
+
+    <button onclick="loadUsb()">Scan USB</button>
+    <div id="usbArea"></div>
+</div>
+
+<div class="card">
+    <h2>Status</h2>
+    <div id="status" class="status idle">Idle</div>
+</div>
+
+<div class="card">
+    <h2>Verification Diff</h2>
+    <pre id="diff"></pre>
+@ -182,181 +197,38 @@
+    </div>
+</div>
+
+<!-- FLOATING STATUS -->
+<div id="statusBar" class="idle">
+    <div id="spinner"></div>
+    <div id="statusText">Idle</div>
+</div>
+
 <script>
 const el = {};
 let binaryB64 = "";
@@ -6,10 +136,7 @@ let view = "binary";
 let statusTimer = null;
 
 window.addEventListener("DOMContentLoaded", () => {
-    el.statusBar = document.getElementById("statusBar");
-    el.statusText = document.getElementById("statusText");
-    el.spinner = document.getElementById("spinner");
-
+    el.status = document.getElementById("status");
     el.preview = document.getElementById("preview");
     el.matchResult = document.getElementById("matchResult");
     el.toggleView = document.getElementById("toggleView");
@@ -22,28 +149,33 @@ window.addEventListener("DOMContentLoaded", () => {
     el.usbArea = document.getElementById("usbArea");
 
     loadVersion();
+    el.statusBar = document.getElementById("statusBar");
+    el.statusText = document.getElementById("statusText");
+    el.spinner = document.getElementById("spinner");
 });
 
-/* ===== STATUS BAR ===== */
+/* ===== STATUS MANAGER ===== */
 function setStatus(msg, cls) {
+    el.status.textContent = msg;
+    el.status.className = "status " + cls;
+}
     clearTimeout(statusTimer);
 
-    el.statusText.textContent = msg;
-    el.statusBar.className = cls;
-    el.spinner.style.display = (cls === "working") ? "block" : "none";
-
-    if (cls === "success") {
-        statusTimer = setTimeout(() => {
-            el.statusText.textContent = "Idle";
-            el.statusBar.className = "idle";
-        }, 3000);
-    }
-}
-
-/* ===== CORE ===== */
 function loadVersion() {
     fetch("/version").then(r => r.json()).then(d => el.version.textContent = d.version);
 }
+
+function updateRepo() {
+    if (!confirm("Update from GitHub?")) return;
+    setStatus("Updating…", "working");
+    fetch("/update_repo", { method: "POST" })
+        .then(() => {
+            setStatus("Updated ✔", "success");
+            loadVersion();
+        });
+}
+    el.statusText.textContent = msg;
+    el.statusBar.className = cls;
 
 function readEdid() {
     setStatus("Reading EDID…", "working");
@@ -60,6 +192,7 @@ function readEdid() {
             setStatus("Read complete ✔", "success");
         });
 }
+    el.spinner.style.display = (cls === "working") ? "block" : "none";
 
 function toggleView() {
     view === "binary" ? setDecodedView() : setBinaryView();
@@ -73,6 +206,12 @@ function setBinaryView() {
     for (let i = 0; i < bin.length; i++) {
         out += bin.charCodeAt(i).toString(16).padStart(2, "0") + " ";
         if ((i + 1) % 16 === 0) out += "\n";
+    // Auto-hide success after 3s
+    if (cls === "success") {
+        statusTimer = setTimeout(() => {
+            el.statusText.textContent = "Idle";
+            el.statusBar.className = "idle";
+        }, 3000);
     }
     el.preview.value = out;
 }
@@ -132,7 +271,6 @@ function resetEdid() {
     setStatus("Idle", "idle");
 }
 
-/* ===== USB ===== */
 function loadUsb() {
     el.usbArea.innerHTML = "";
     fetch("/usb/status")
@@ -182,3 +320,4 @@ function confirmReboot() {
     fetch("/reboot", { method: "POST" });
 }
 </script>
+
