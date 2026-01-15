@@ -81,7 +81,6 @@ DNSMASQ_CONF="/etc/dnsmasq.d/bt-pan.conf"
 
 sudo tee "$DNSMASQ_CONF" > /dev/null <<'EOF'
 interface=pan0
-bind-interfaces
 dhcp-range=192.168.44.10,192.168.44.50,255.255.255.0,12h
 EOF
 
